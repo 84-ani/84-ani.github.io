@@ -6,26 +6,29 @@
   <title>2D & 3D Keyframe Studio</title>
   <link rel="manifest" href="manifest.json">
   
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
-    body { display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; color: white; }
+    body { display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; color: white; overflow: hidden; }
     
-    header { height: 50px; background: #2d2d2d; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; }
+    header { height: 50px; background: #2d2d2d; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; z-index: 10; }
     .btn { background: #007acc; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
     .btn:hover { background: #005999; }
     .btn-alt { background: #3a3a3a; }
+    .btn-alt:hover { background: #555; }
     
-    #app-container { display: flex; flex: 1; overflow: hidden; }
-    #viewport-container { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; background: #111; }
-    canvas { width: 100% !important; height: 100% !important; display: block; }
+    #app-container { display: flex; flex: 1; position: relative; overflow: hidden; }
+    #viewport-container { flex: 1; position: relative; background: #111; width: 100%; height: 100%; }
     
-    #admin-panel { width: 320px; background: #242424; border-left: 1px solid #333; padding: 1rem; display: none; overflow-y: auto; }
+    canvas#canvas2d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; z-index: 1; }
+    #container3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; z-index: 2; }
     
-    #timeline { height: 120px; background: #252526; border-top: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    #admin-panel { width: 320px; background: #242424; border-left: 1px solid #333; padding: 1rem; display: none; overflow-y: auto; z-index: 5; }
+    
+    #timeline { height: 100px; background: #252526; border-top: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
     .timeline-controls { display: flex; align-items: center; gap: 10px; }
     input[type=range] { flex: 1; }
 
@@ -39,20 +42,20 @@
 
   <header>
     <div>
-      <strong>AnimStudio</strong>
-      <button class="btn btn-alt" onclick="switchMode('2D')">2D Canvas</button>
-      <button class="btn btn-alt" onclick="switchMode('3D')">3D Scene</button>
+      <strong style="margin-right: 15px;">AnimStudio</strong>
+      <button class="btn btn-alt" id="btn-2d" onclick="switchMode('2D')">2D Canvas</button>
+      <button class="btn btn-alt" id="btn-3d" onclick="switchMode('3D')">3D Scene</button>
     </div>
     <div>
       <button class="btn btn-alt" id="auth-btn" onclick="toggleAuthModal()">Login / Sign Up</button>
-      <button class="btn btn-alt hidden" id="admin-btn" onclick="toggleAdminPanel()">Org Dashboard</button>
+      <button class="btn btn-alt" id="admin-btn" onclick="toggleAdminPanel()">Org Dashboard</button>
     </div>
   </header>
 
   <div id="app-container">
     <div id="viewport-container">
       <canvas id="canvas2d"></canvas>
-      <div id="container3d" style="width:100%; height:100%; display:none;"></div>
+      <div id="container3d"></div>
     </div>
 
     <div id="admin-panel">
@@ -99,35 +102,44 @@
   </div>
 
   <script>
-    // --- SUPABASE CONFIGURATION ---
+    // --- SAFE SUPABASE INIT ---
     const SUPABASE_URL = "https://ibggemfajbhyaxymfqfs.supabase.co"; 
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImliZ2dlbWZhamJoeWF4eW1mcWZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MTMxNDYsImV4cCI6MjEwMjE4OTE0Nn0.sRUG3juAuZ8K7PUucrAo4ESjMY3gwZS6hW17bbFYIYI"; 
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const SUPABASE_KEY = "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"; 
+    let supabase = null;
+
+    if (window.supabase && SUPABASE_URL.indexOf("YOUR_SUPABASE") === -1) {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
 
     // --- STATE VARIABLES ---
     let mode = '2D'; // '2D' or '3D'
     let currentFrame = 0;
     let isPlaying = false;
-    let keyframes = {}; // { frameNum: { x, y, z, rotation } }
+    let keyframes = {}; 
 
     // --- 2D ENGINE SETUP ---
     const canvas2d = document.getElementById('canvas2d');
     const ctx = canvas2d.getContext('2d');
-    let obj2D = { x: 150, y: 150, radius: 40 };
+    let obj2D = { x: 200, y: 200, radius: 40 };
 
     function resize2D() {
-      canvas2d.width = canvas2d.parentElement.clientWidth;
-      canvas2d.height = canvas2d.parentElement.clientHeight;
+      const container = document.getElementById('viewport-container');
+      canvas2d.width = container.clientWidth;
+      canvas2d.height = container.clientHeight;
       render2D();
     }
-    window.addEventListener('resize', resize2D);
 
     function render2D() {
       ctx.clearRect(0, 0, canvas2d.width, canvas2d.height);
+      
+      // Draw Object
       ctx.fillStyle = "#007acc";
       ctx.beginPath();
       ctx.arc(obj2D.x, obj2D.y, obj2D.radius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 3;
+      ctx.stroke();
     }
 
     // --- 3D ENGINE SETUP (Three.js) ---
@@ -145,8 +157,8 @@
     camera.position.z = 5;
 
     function resize3D() {
-      const w = container3D.clientWidth;
-      const h = container3D.clientHeight;
+      const w = container3D.clientWidth || 1;
+      const h = container3D.clientHeight || 1;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -154,8 +166,12 @@
 
     function animate3DLoop(time) {
       requestAnimationFrame(animate3DLoop);
-      TWEEN.update(time);
-      if (mode === '3D') renderer.render(scene, camera);
+      if (window.TWEEN) TWEEN.update(time);
+      if (mode === '3D') {
+        cube3D.rotation.x += 0.01;
+        cube3D.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      }
     }
     requestAnimationFrame(animate3DLoop);
 
@@ -190,7 +206,6 @@
       const frames = Object.keys(keyframes).map(Number).sort((a,b) => a - b);
       if (frames.length === 0) return;
 
-      // Find surrounding keyframes
       let prev = frames[0], next = frames[frames.length - 1];
       for (let f of frames) {
         if (f <= frame) prev = f;
@@ -202,7 +217,6 @@
         return;
       }
 
-      // Linear Auto-Tweening Logic
       const factor = (frame - prev) / (next - prev);
       const kPrev = keyframes[prev];
       const kNext = keyframes[next];
@@ -214,7 +228,19 @@
       } else {
         cube3D.position.x = kPrev.x + (kNext.x - kPrev.x) * factor;
         cube3D.position.y = kPrev.y + (kNext.y - kPrev.y) * factor;
-        cube3D.position.z = kPrev.z + (kNext.z - kPrev.z) * factor;
+        cube3D.position.z = (kPrev.z || 0) + ((kNext.z || 0) - (kPrev.z || 0)) * factor;
+      }
+    }
+
+    function applyState(state) {
+      if (mode === '2D') {
+        obj2D.x = state.x;
+        obj2D.y = state.y;
+        render2D();
+      } else {
+        cube3D.position.x = state.x;
+        cube3D.position.y = state.y;
+        cube3D.position.z = state.z || 0;
       }
     }
 
@@ -226,7 +252,7 @@
         currentFrame = (currentFrame + 1) % 101;
         document.getElementById('scrubber').value = currentFrame;
         onScrub(currentFrame);
-      }, 33); // ~30fps
+      }, 33);
     }
 
     function pauseAnimation() {
@@ -234,10 +260,12 @@
       clearInterval(playInterval);
     }
 
-    // Interactive Dragging on 2D Canvas
+    // Mouse Dragging for 2D Canvas
     let isDragging = false;
     canvas2d.addEventListener('mousedown', (e) => { isDragging = true; });
-    canvas2d.addEventListener('mousemove', (e) => {
+    canvas2d.addEventListener('touchstart', (e) => { isDragging = true; }, {passive: true});
+    
+    window.addEventListener('mousemove', (e) => {
       if (isDragging && mode === '2D') {
         const rect = canvas2d.getBoundingClientRect();
         obj2D.x = e.clientX - rect.left;
@@ -245,16 +273,27 @@
         render2D();
       }
     });
-    canvas2d.addEventListener('mouseup', () => { isDragging = false; });
 
-    // --- AUTHENTICATION & SCHOOL ADMIN SYSTEM ---
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && mode === '2D' && e.touches[0]) {
+        const rect = canvas2d.getBoundingClientRect();
+        obj2D.x = e.touches[0].clientX - rect.left;
+        obj2D.y = e.touches[0].clientY - rect.top;
+        render2D();
+      }
+    }, {passive: true});
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('touchend', () => { isDragging = false; });
+
+    // --- UI CONTROLS & AUTH ---
     function toggleAuthModal() {
       document.getElementById('auth-modal').classList.toggle('hidden');
     }
     
     function toggleAdminPanel() {
       const panel = document.getElementById('admin-panel');
-      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+      panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
     }
 
     function toggleCustomPwd(val) {
@@ -262,19 +301,25 @@
     }
 
     async function loginOAuth(provider) {
+      if (!supabase) return alert("Supabase credentials not configured in index.html yet!");
       await supabase.auth.signInWithOAuth({ provider: provider });
     }
 
     async function loginEmail() {
       const email = document.getElementById('email-in').value;
       const password = document.getElementById('pass-in').value;
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       
+      if (!supabase) {
+        alert("Demo Mode: Signed in locally!");
+        toggleAuthModal();
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if(error) alert(error.message);
       else {
         alert("Logged in successfully!");
         toggleAuthModal();
-        document.getElementById('admin-btn').classList.remove('hidden');
       }
     }
 
@@ -287,24 +332,40 @@
       let log = document.getElementById('admin-log');
       log.innerHTML = "Processing...";
 
+      if (!lines.length) {
+        log.innerHTML = "Please enter at least one line!";
+        return;
+      }
+
       for (let line of lines) {
-        const [email, fullName] = line.split(',').map(s => s.trim());
+        const [email, fullName] = line.split(',').map(s => s ? s.trim() : '');
         let password = pwdStrategy === 'default' ? 'password123' : customPwd;
 
-        // Register user via Supabase Auth
+        if (!supabase) {
+          log.innerHTML += `<br>Simulated creation for: ${email}`;
+          continue;
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email: email,
           password: password,
           options: { data: { full_name: fullName } }
         });
 
-        if (error) log.innerHTML += `<br><span style="color:red">Failed: ${email}</span>`;
+        if (error) log.innerHTML += `<br><span style="color:#ff6b6b">Failed: ${email}</span>`;
         else log.innerHTML += `<br>Created: ${email}`;
       }
     }
 
-    // Init Engine
-    resize2D();
+    // Initialize layout on load
+    window.addEventListener('load', () => {
+      resize2D();
+      resize3D();
+    });
+    window.addEventListener('resize', () => {
+      resize2D();
+      resize3D();
+    });
   </script>
 </body>
 </html>
