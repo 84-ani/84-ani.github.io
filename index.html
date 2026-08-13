@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D & 3D Keyframe Studio</title>
+  <link rel="manifest" href="manifest.json">
+  
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; color: white; }
+    
+    header { height: 50px; background: #2d2d2d; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; }
+    .btn { background: #007acc; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    .btn:hover { background: #005999; }
+    .btn-alt { background: #3a3a3a; }
+    
+    #app-container { display: flex; flex: 1; overflow: hidden; }
+    #viewport-container { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; background: #111; }
+    canvas { width: 100% !important; height: 100% !important; display: block; }
+    
+    #admin-panel { width: 320px; background: #242424; border-left: 1px solid #333; padding: 1rem; display: none; overflow-y: auto; }
+    
+    #timeline { height: 120px; background: #252526; border-top: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .timeline-controls { display: flex; align-items: center; gap: 10px; }
+    input[type=range] { flex: 1; }
+
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-card { background: #2a2a2a; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; }
+    .modal-card input, .modal-card textarea, .modal-card select { width: 100%; margin: 8px 0; padding: 8px; background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <strong>AnimStudio</strong>
+      <button class="btn btn-alt" onclick="switchMode('2D')">2D Canvas</button>
+      <button class="btn btn-alt" onclick="switchMode('3D')">3D Scene</button>
+    </div>
+    <div>
+      <button class="btn btn-alt" id="auth-btn" onclick="toggleAuthModal()">Login / Sign Up</button>
+      <button class="btn btn-alt hidden" id="admin-btn" onclick="toggleAdminPanel()">Org Dashboard</button>
+    </div>
+  </header>
+
+  <div id="app-container">
+    <div id="viewport-container">
+      <canvas id="canvas2d"></canvas>
+      <div id="container3d" style="width:100%; height:100%; display:none;"></div>
+    </div>
+
+    <div id="admin-panel">
+      <h3>Bulk Account Creator</h3>
+      <p style="font-size: 0.8rem; color: #aaa; margin: 5px 0;">Paste list (e.g., <code>john@school.org, John Doe</code>)</p>
+      
+      <textarea id="bulk-import" rows="6" placeholder="email, full_name (one per line)"></textarea>
+      
+      <label style="font-size: 0.85rem;">Password Strategy:</label>
+      <select id="pwd-strategy" onchange="toggleCustomPwd(this.value)">
+        <option value="default">Default Password (password123)</option>
+        <option value="custom_all">Custom Password for All</option>
+      </select>
+      
+      <input type="password" id="custom-pwd" class="hidden" placeholder="Enter universal password">
+
+      <button class="btn" onclick="processBulkAccounts()" style="width: 100%; margin-top: 10px;">Create Accounts</button>
+      <div id="admin-log" style="margin-top: 10px; font-size: 0.8rem; color: #4caf50;"></div>
+    </div>
+  </div>
+
+  <div id="timeline">
+    <div class="timeline-controls">
+      <button class="btn" onclick="playAnimation()">▶ Play</button>
+      <button class="btn btn-alt" onclick="pauseAnimation()">⏸ Pause</button>
+      <button class="btn" onclick="addKeyframe()">📍 Add Keyframe</button>
+      <span>Frame: <strong id="current-frame-lbl">0</strong> / 100</span>
+    </div>
+    <input type="range" id="scrubber" min="0" max="100" value="0" oninput="onScrub(this.value)">
+  </div>
+
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Sign In / Register</h3>
+      <p style="font-size:0.8rem; color:#ccc; margin-bottom: 10px;">For personal accounts or Organization Admins</p>
+      <button class="btn" onclick="loginOAuth('google')" style="width:100%; margin-bottom: 5px;">Continue with Google</button>
+      <button class="btn" onclick="loginOAuth('azure')" style="width:100%; margin-bottom: 15px; background: #2f2f2f;">Continue with Microsoft</button>
+      <hr style="border-color:#444;"><br>
+      <input type="email" id="email-in" placeholder="Email">
+      <input type="password" id="pass-in" placeholder="Password">
+      <button class="btn" onclick="loginEmail()" style="width:100%;">Sign In with Email</button>
+      <button class="btn btn-alt" onclick="toggleAuthModal()" style="width:100%; margin-top:5px;">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // --- SUPABASE CONFIGURATION ---
+    const SUPABASE_URL = "https://ibggemfajbhyaxymfqfs.supabase.co"; 
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImliZ2dlbWZhamJoeWF4eW1mcWZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MTMxNDYsImV4cCI6MjEwMjE4OTE0Nn0.sRUG3juAuZ8K7PUucrAo4ESjMY3gwZS6hW17bbFYIYI"; 
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // --- STATE VARIABLES ---
+    let mode = '2D'; // '2D' or '3D'
+    let currentFrame = 0;
+    let isPlaying = false;
+    let keyframes = {}; // { frameNum: { x, y, z, rotation } }
+
+    // --- 2D ENGINE SETUP ---
+    const canvas2d = document.getElementById('canvas2d');
+    const ctx = canvas2d.getContext('2d');
+    let obj2D = { x: 150, y: 150, radius: 40 };
+
+    function resize2D() {
+      canvas2d.width = canvas2d.parentElement.clientWidth;
+      canvas2d.height = canvas2d.parentElement.clientHeight;
+      render2D();
+    }
+    window.addEventListener('resize', resize2D);
+
+    function render2D() {
+      ctx.clearRect(0, 0, canvas2d.width, canvas2d.height);
+      ctx.fillStyle = "#007acc";
+      ctx.beginPath();
+      ctx.arc(obj2D.x, obj2D.y, obj2D.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- 3D ENGINE SETUP (Three.js) ---
+    const container3D = document.getElementById('container3d');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    
+    container3D.appendChild(renderer.domElement);
+    
+    const geometry = new THREE.BoxGeometry(2, 2, 2);
+    const material = new THREE.MeshNormalMaterial();
+    const cube3D = new THREE.Mesh(geometry, material);
+    scene.add(cube3D);
+    camera.position.z = 5;
+
+    function resize3D() {
+      const w = container3D.clientWidth;
+      const h = container3D.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    function animate3DLoop(time) {
+      requestAnimationFrame(animate3DLoop);
+      TWEEN.update(time);
+      if (mode === '3D') renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate3DLoop);
+
+    // Mode Switcher
+    function switchMode(newMode) {
+      mode = newMode;
+      if(mode === '2D') {
+        canvas2d.style.display = 'block';
+        container3D.style.display = 'none';
+        resize2D();
+      } else {
+        canvas2d.style.display = 'none';
+        container3D.style.display = 'block';
+        resize3D();
+      }
+    }
+
+    // --- KEYFRAME & AUTO-TWEENING ENGINE ---
+    function addKeyframe() {
+      const pos = mode === '2D' ? { x: obj2D.x, y: obj2D.y } : { x: cube3D.position.x, y: cube3D.position.y, z: cube3D.position.z };
+      keyframes[currentFrame] = pos;
+      alert(`Keyframe stored at Frame ${currentFrame}`);
+    }
+
+    function onScrub(val) {
+      currentFrame = parseInt(val);
+      document.getElementById('current-frame-lbl').innerText = currentFrame;
+      interpolateFrame(currentFrame);
+    }
+
+    function interpolateFrame(frame) {
+      const frames = Object.keys(keyframes).map(Number).sort((a,b) => a - b);
+      if (frames.length === 0) return;
+
+      // Find surrounding keyframes
+      let prev = frames[0], next = frames[frames.length - 1];
+      for (let f of frames) {
+        if (f <= frame) prev = f;
+        if (f >= frame && next === frames[frames.length - 1]) next = f;
+      }
+
+      if (prev === next) {
+        applyState(keyframes[prev]);
+        return;
+      }
+
+      // Linear Auto-Tweening Logic
+      const factor = (frame - prev) / (next - prev);
+      const kPrev = keyframes[prev];
+      const kNext = keyframes[next];
+
+      if (mode === '2D') {
+        obj2D.x = kPrev.x + (kNext.x - kPrev.x) * factor;
+        obj2D.y = kPrev.y + (kNext.y - kPrev.y) * factor;
+        render2D();
+      } else {
+        cube3D.position.x = kPrev.x + (kNext.x - kPrev.x) * factor;
+        cube3D.position.y = kPrev.y + (kNext.y - kPrev.y) * factor;
+        cube3D.position.z = kPrev.z + (kNext.z - kPrev.z) * factor;
+      }
+    }
+
+    let playInterval;
+    function playAnimation() {
+      if(isPlaying) return;
+      isPlaying = true;
+      playInterval = setInterval(() => {
+        currentFrame = (currentFrame + 1) % 101;
+        document.getElementById('scrubber').value = currentFrame;
+        onScrub(currentFrame);
+      }, 33); // ~30fps
+    }
+
+    function pauseAnimation() {
+      isPlaying = false;
+      clearInterval(playInterval);
+    }
+
+    // Interactive Dragging on 2D Canvas
+    let isDragging = false;
+    canvas2d.addEventListener('mousedown', (e) => { isDragging = true; });
+    canvas2d.addEventListener('mousemove', (e) => {
+      if (isDragging && mode === '2D') {
+        const rect = canvas2d.getBoundingClientRect();
+        obj2D.x = e.clientX - rect.left;
+        obj2D.y = e.clientY - rect.top;
+        render2D();
+      }
+    });
+    canvas2d.addEventListener('mouseup', () => { isDragging = false; });
+
+    // --- AUTHENTICATION & SCHOOL ADMIN SYSTEM ---
+    function toggleAuthModal() {
+      document.getElementById('auth-modal').classList.toggle('hidden');
+    }
+    
+    function toggleAdminPanel() {
+      const panel = document.getElementById('admin-panel');
+      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function toggleCustomPwd(val) {
+      document.getElementById('custom-pwd').classList.toggle('hidden', val !== 'custom_all');
+    }
+
+    async function loginOAuth(provider) {
+      await supabase.auth.signInWithOAuth({ provider: provider });
+    }
+
+    async function loginEmail() {
+      const email = document.getElementById('email-in').value;
+      const password = document.getElementById('pass-in').value;
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      
+      if(error) alert(error.message);
+      else {
+        alert("Logged in successfully!");
+        toggleAuthModal();
+        document.getElementById('admin-btn').classList.remove('hidden');
+      }
+    }
+
+    async function processBulkAccounts() {
+      const rawText = document.getElementById('bulk-import').value;
+      const lines = rawText.split('\n').filter(l => l.trim() !== '');
+      const pwdStrategy = document.getElementById('pwd-strategy').value;
+      const customPwd = document.getElementById('custom-pwd').value;
+
+      let log = document.getElementById('admin-log');
+      log.innerHTML = "Processing...";
+
+      for (let line of lines) {
+        const [email, fullName] = line.split(',').map(s => s.trim());
+        let password = pwdStrategy === 'default' ? 'password123' : customPwd;
+
+        // Register user via Supabase Auth
+        const { data, error } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+          options: { data: { full_name: fullName } }
+        });
+
+        if (error) log.innerHTML += `<br><span style="color:red">Failed: ${email}</span>`;
+        else log.innerHTML += `<br>Created: ${email}`;
+      }
+    }
+
+    // Init Engine
+    resize2D();
+  </script>
+</body>
+</html>
