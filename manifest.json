@@ -1,0 +1,15 @@
+{
+  "short_name": "AnimStudio",
+  "name": "2D & 3D Animation Studio",
+  "icons": [
+    {
+      "src": "icon.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#121212",
+  "theme_color": "#1f1f1f",
+  "display": "standalone"
+}
