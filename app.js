@@ -1,5 +1,6 @@
 /* Global Application State */
 let supabaseClient = null;
+let currentUser = null;
 let currentMode = '2d';
 let currentFrame = 0;
 const totalFrames = 60;
@@ -40,29 +41,35 @@ function resizeCanvases() {
 
 window.addEventListener('resize', resizeCanvases);
 
-/* --- 2. AUTH & MODAL FUNCTIONS --- */
+/* --- 2. AUTHENTICATION & LOGIN --- */
 function switchAuthTab(tab) {
-  document.getElementById('btn-tab-personal').classList.toggle('active', tab === 'personal');
+  document.getElementById('btn-tab-personal').classList.toggle('active', tab === 'student');
   document.getElementById('btn-tab-admin').classList.toggle('active', tab === 'admin');
-  document.getElementById('tab-personal').classList.toggle('hidden', tab !== 'personal');
+  document.getElementById('tab-student').classList.toggle('hidden', tab !== 'student');
   document.getElementById('tab-admin').classList.toggle('hidden', tab !== 'admin');
 }
 
-function connectSupabase() {
-  const url = document.getElementById('supabase-url').value.trim();
-  const key = document.getElementById('supabase-key').value.trim();
+async function loginWithEmail() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-pass').value.trim();
 
-  if (!url || !key) {
-    alert("Please enter both Supabase URL and Anon Key.");
+  if (!email || !password) {
+    alert("Please enter both email and password!");
     return;
   }
 
-  try {
-    supabaseClient = window.supabase.createClient(url, key);
-    document.getElementById('admin-panel-toggle').classList.remove('hidden');
-    enterApp("Admin User");
-  } catch (err) {
-    alert("Failed to connect to Supabase. Check your credentials.");
+  if (supabaseClient) {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) {
+      alert("Login Error: " + error.message);
+    } else {
+      currentUser = data.user;
+      enterApp(currentUser.user_metadata?.full_name || currentUser.email);
+    }
+  } else {
+    // Standalone Demo login
+    currentUser = { email: email, id: "demo-user-123" };
+    enterApp(email);
   }
 }
 
@@ -78,42 +85,73 @@ async function loginGoogle() {
         options: { redirectTo: window.location.href }
       });
       if (error) throw error;
+      return;
     } catch (err) {
-      alert("Google Sign-In Error: " + err.message);
-      googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
+      console.warn("Supabase Google Auth failed, trying direct Google OAuth.");
     }
-    return;
   }
 
-  // 2. Standard OAuth Popup (No FedCM, zero console errors)
+  // 2. Direct Google OAuth Popup using your Client ID
+  const CLIENT_ID = '1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com';
+
   if (window.google && window.google.accounts && window.google.accounts.oauth2) {
     try {
       const client = google.accounts.oauth2.initTokenClient({
-        client_id: '1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com',
-        scope: 'https://www.googleapis.com/auth/userinfo.profile',
-        callback: (tokenResponse) => {
+        client_id: CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+        callback: async (tokenResponse) => {
           if (tokenResponse && tokenResponse.access_token) {
-            enterApp("Google User");
+            // Fetch basic user profile info with access token
+            try {
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+              });
+              const profile = await res.json();
+              
+              currentUser = { email: profile.email, id: profile.sub };
+              enterApp(profile.name || profile.email);
+            } catch (e) {
+              enterApp("Google User");
+            }
           } else {
-            enterApp("Google User (Demo)");
+            googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
           }
         },
-        error_callback: () => {
-          // If Client ID isn't set up yet, enter demo mode seamlessly
-          enterApp("Google User (Demo)");
+        error_callback: (err) => {
+          console.error("Google Auth Error:", err);
+          googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
         }
       });
-      
-      // Requests access token via clean popup window
+
+      // Opens standard Google sign-in popup
       client.requestAccessToken();
     } catch (e) {
+      console.error("Initialization Error:", e);
       enterApp("Google User (Demo)");
     }
   } else {
-    // 3. Instant Fallback for testing/offline
+    // Fallback if script didn't load
     setTimeout(() => {
       enterApp("Google User (Demo)");
-    }, 200);
+    }, 300);
+  }
+}
+
+function connectSupabase() {
+  const url = document.getElementById('supabase-url').value.trim();
+  const key = document.getElementById('supabase-key').value.trim();
+
+  if (!url || !key) {
+    alert("Please enter both Supabase URL and Anon Key.");
+    return;
+  }
+
+  try {
+    supabaseClient = window.supabase.createClient(url, key);
+    document.getElementById('admin-panel-toggle').classList.remove('hidden');
+    enterApp("School Admin");
+  } catch (err) {
+    alert("Failed to connect to Supabase.");
   }
 }
 
@@ -122,7 +160,6 @@ function enterApp(userRole) {
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('user-badge').innerText = userRole;
 
-  // Initialize graphics once viewport is visible
   setTimeout(() => {
     resizeCanvases();
     if (!engine3DInitialized) {
@@ -140,116 +177,66 @@ function toggleAdminPanel() {
   document.getElementById('admin-modal').classList.toggle('hidden');
 }
 
-function toggleGlobalPasswordInput() {
-  const strategy = document.getElementById('password-strategy').value;
-  document.getElementById('global-password').classList.toggle('hidden', strategy !== 'global');
-}
-
-/* --- 3. BULK USER MANAGEMENT --- */
-function handleFileUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    document.getElementById('bulk-text-input').value = e.target.result;
+/* --- 3. CLOUD SAVE & LOAD SYSTEM --- */
+async function saveProjectCloud() {
+  const projectData = {
+    mode: currentMode,
+    keyframes: keyframes,
+    object2D: activeObject2D,
+    timestamp: new Date().toISOString()
   };
-  reader.readAsText(file);
-}
 
-async function createSingleUser() {
-  const name = document.getElementById('single-name').value.trim();
-  const email = document.getElementById('single-email').value.trim();
-  const password = document.getElementById('single-pass').value.trim() || "password123";
+  if (supabaseClient && currentUser) {
+    const { error } = await supabaseClient
+      .from('user_projects')
+      .upsert({ user_id: currentUser.id, project_data: projectData });
 
-  if (!email) {
-    alert("Email address is required!");
-    return;
-  }
-
-  await processAccountCreation([{ email, name, password }]);
-}
-
-async function processBulkImport() {
-  const text = document.getElementById('bulk-text-input').value.trim();
-  const strategy = document.getElementById('password-strategy').value;
-  const globalPass = document.getElementById('global-password').value.trim();
-
-  if (!text) {
-    alert("Please paste text or upload a .txt/.csv file first.");
-    return;
-  }
-
-  const lines = text.split('\n');
-  const userList = [];
-
-  lines.forEach(line => {
-    const parts = line.split(',').map(p => p.trim());
-    if (parts[0]) {
-      let pwd = "password123";
-      if (strategy === 'global' && globalPass) pwd = globalPass;
-      else if (strategy === 'custom' && parts[2]) pwd = parts[2];
-
-      userList.push({
-        email: parts[0],
-        name: parts[1] || "Student",
-        password: pwd
-      });
+    if (error) {
+      alert("Save failed: " + error.message);
+    } else {
+      alert("Project saved successfully to the cloud! ☁️");
     }
-  });
-
-  await processAccountCreation(userList);
-}
-
-async function processAccountCreation(userList) {
-  const statusMsg = document.getElementById('admin-status-msg');
-  statusMsg.innerText = `Processing ${userList.length} accounts...`;
-
-  // Demo Mode fallback if Supabase isn't connected
-  if (!supabaseClient) {
-    setTimeout(() => {
-      statusMsg.style.color = '#2ed573';
-      statusMsg.innerText = `[Demo Mode] Successfully created ${userList.length} user account(s)!`;
-      console.log("Created users (Demo):", userList);
-    }, 500);
-    return;
-  }
-
-  // Live Supabase Mode
-  let createdCount = 0;
-  let errorDetails = [];
-
-  for (const user of userList) {
-    try {
-      const { data, error } = await supabaseClient.auth.signUp({
-        email: user.email,
-        password: user.password,
-        options: { 
-          data: { full_name: user.name } 
-        }
-      });
-
-      if (error) {
-        errorDetails.push(`${user.email}: ${error.message}`);
-      } else if (data?.user) {
-        createdCount++;
-      }
-    } catch (err) {
-      errorDetails.push(`${user.email}: ${err.message}`);
-    }
-  }
-
-  if (createdCount === userList.length) {
-    statusMsg.style.color = '#2ed573';
-    statusMsg.innerText = `Successfully created ${createdCount} of ${userList.length} accounts!`;
   } else {
-    statusMsg.style.color = '#ff4757';
-    statusMsg.innerText = `Created ${createdCount} of ${userList.length} accounts.\n` + errorDetails.join('\n');
+    // Local storage backup fallback
+    localStorage.setItem('anima_project_backup', JSON.stringify(projectData));
+    alert("Project saved locally! (Connect Supabase for multi-device cloud saves)");
   }
 }
+
+async function loadProjectsCloud() {
+  let savedData = null;
+
+  if (supabaseClient && currentUser) {
+    const { data, error } = await supabaseClient
+      .from('user_projects')
+      .select('project_data')
+      .eq('user_id', currentUser.id)
+      .single();
+
+    if (data) savedData = data.project_data;
+  } else {
+    const raw = localStorage.getItem('anima_project_backup');
+    if (raw) savedData = JSON.parse(raw);
+  }
+
+  if (savedData) {
+    keyframes = savedData.keyframes || {};
+    activeObject2D = savedData.object2D || activeObject2D;
+    
+    // Highlight saved keyframes in UI timeline
+    setupTimelineUI();
+    Object.keys(keyframes).forEach(frameIdx => {
+      document.getElementById(`frame-${frameIdx}`)?.classList.add('keyframe');
+    });
+
+    setDimensionMode(savedData.mode || '2d');
+    alert("Saved animation project loaded! 📂");
+  } else {
+    alert("No saved project found!");
+  }
 }
 
-/* --- 4. 2D / 3D RENDERING ENGINE --- */
+/* --- 4. EXPANDED 2D & 3D GEOMETRY ENGINE --- */
 function setDimensionMode(mode) {
   currentMode = mode;
   document.getElementById('mode-2d-btn').classList.toggle('active', mode === '2d');
@@ -274,7 +261,29 @@ function render2D() {
     ctx2D.beginPath();
     ctx2D.arc(activeObject2D.x, activeObject2D.y, activeObject2D.width / 2, 0, Math.PI * 2);
     ctx2D.fill();
+  } else if (activeObject2D.type === 'star') {
+    drawStar(ctx2D, activeObject2D.x, activeObject2D.y, 5, 40, 20);
+  } else if (activeObject2D.type === 'text') {
+    ctx2D.font = "30px Segoe UI, sans-serif";
+    ctx2D.fillText("AnimaStudio", activeObject2D.x, activeObject2D.y);
   }
+}
+
+function drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius) {
+  let rot = Math.PI / 2 * 3;
+  let step = Math.PI / spikes;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - outerRadius);
+  for (let i = 0; i < spikes; i++) {
+    ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius);
+    rot += step;
+    ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius);
+    rot += step;
+  }
+  ctx.lineTo(cx, cy - outerRadius);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function init3DEngine() {
@@ -283,15 +292,16 @@ function init3DEngine() {
   scene3D.background = new THREE.Color(0x0f0f15);
 
   camera3D = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
-  camera3D.position.z = 5;
+  camera3D.position.z = 6;
 
   renderer3D = new THREE.WebGLRenderer({ antialias: true });
   renderer3D.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer3D.domElement);
 
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(2, 2, 5).normalize();
+  const light = new THREE.DirectionalLight(0xffffff, 1.2);
+  light.position.set(3, 4, 5).normalize();
   scene3D.add(light);
+  scene3D.add(new THREE.AmbientLight(0x404040));
 
   add3DObject('cube');
 
@@ -310,11 +320,27 @@ function add2DShape(type) {
 function add3DObject(type) {
   if (activeMesh3D) scene3D.remove(activeMesh3D);
 
-  let geometry = type === 'cube' 
-    ? new THREE.BoxGeometry(1.5, 1.5, 1.5) 
-    : new THREE.SphereGeometry(1, 32, 32);
+  let geometry;
+  switch (type) {
+    case 'sphere':
+      geometry = new THREE.SphereGeometry(1, 32, 32);
+      break;
+    case 'cylinder':
+      geometry = new THREE.CylinderGeometry(0.8, 0.8, 2, 32);
+      break;
+    case 'torus':
+      geometry = new THREE.TorusGeometry(1, 0.35, 16, 100);
+      break;
+    case 'pyramid':
+      geometry = new THREE.ConeGeometry(1.2, 2, 4);
+      break;
+    case 'cube':
+    default:
+      geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+      break;
+  }
 
-  const material = new THREE.MeshPhongMaterial({ color: 0x4db5ff });
+  const material = new THREE.MeshPhongMaterial({ color: 0x4db5ff, shininess: 80 });
   activeMesh3D = new THREE.Mesh(geometry, material);
   scene3D.add(activeMesh3D);
 }
@@ -351,7 +377,7 @@ function setupTimelineUI() {
 function selectFrame(index) {
   currentFrame = index;
   document.querySelectorAll('.timeline-frame').forEach(f => f.classList.remove('active'));
-  document.getElementById(`frame-${index}`).classList.add('active');
+  document.getElementById(`frame-${index}`)?.classList.add('active');
   document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${totalFrames}`;
 
   evaluateInterpolatedState(currentFrame);
@@ -421,4 +447,32 @@ function togglePlayback() {
     playBtn.innerText = "▶ Play";
     clearInterval(playInterval);
   }
+}
+
+/* Admin Account Creation */
+async function processAccountCreation(userList) {
+  const statusMsg = document.getElementById('admin-status-msg');
+  statusMsg.style.color = '#4db5ff';
+  statusMsg.innerText = `Processing ${userList.length} user accounts...`;
+
+  if (!supabaseClient) {
+    setTimeout(() => {
+      statusMsg.style.color = '#2ed573';
+      statusMsg.innerText = `[Demo Mode] Added ${userList.length} accounts to database queue!`;
+    }, 400);
+    return;
+  }
+
+  let createdCount = 0;
+  for (const user of userList) {
+    const { data, error } = await supabaseClient.auth.signUp({
+      email: user.email.trim(),
+      password: user.password.trim(),
+      options: { data: { full_name: user.name } }
+    });
+    if (!error && data?.user) createdCount++;
+  }
+
+  statusMsg.style.color = createdCount > 0 ? '#2ed573' : '#ff4757';
+  statusMsg.innerText = `Created ${createdCount} of ${userList.length} account(s) successfully!`;
 }
