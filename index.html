@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AnimaStudio - 2D/3D Web Animator</title>
   <link rel="stylesheet" href="styles.css">
-  
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -18,12 +17,18 @@
       <p>Easy 2D & 3D Animation Suite</p>
       
       <div class="tabs">
-        <button id="btn-tab-personal" class="tab-btn active" onclick="switchAuthTab('personal')">Personal Sign In</button>
-        <button id="btn-tab-admin" class="tab-btn" onclick="switchAuthTab('admin')">School / Business Admin</button>
+        <button id="btn-tab-personal" class="tab-btn active" onclick="switchAuthTab('student')">Student / Worker Login</button>
+        <button id="btn-tab-admin" class="tab-btn" onclick="switchAuthTab('admin')">School Admin</button>
       </div>
 
-      <div id="tab-personal" class="auth-tab">
-        <button id="google-login-btn" onclick="loginGoogle()" class="primary-btn google-btn">
+      <div id="tab-student" class="auth-tab">
+        <input type="email" id="login-email" placeholder="School/Worker Email">
+        <input type="password" id="login-pass" placeholder="Password">
+        <button onclick="loginWithEmail()" class="primary-btn" style="width:100%; margin-top:5px;">Log In</button>
+        
+        <hr style="margin:15px 0; border-color:#3b3e54;">
+        
+        <button id="google-login-btn" onclick="loginGoogle()" class="secondary-btn google-btn">
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
           Sign in with Google
         </button>
@@ -49,25 +54,34 @@
         <button class="mode-btn" id="mode-3d-btn" onclick="setDimensionMode('3d')">3D Scene</button>
       </div>
       <div class="nav-right">
-        <button onclick="toggleAdminPanel()" id="admin-panel-toggle" class="hidden">School Admin Panel</button>
+        <button onclick="saveProjectCloud()" class="primary-btn" style="background:#2ed573; color:#111;">💾 Save Project</button>
+        <button onclick="loadProjectsCloud()" class="secondary-btn">📂 Open Saved</button>
+        <button onclick="toggleAdminPanel()" id="admin-panel-toggle" class="hidden">School Admin</button>
         <button onclick="logout()" class="danger-btn" style="background:#ff4757; color:#fff;">Log Out</button>
       </div>
     </header>
 
     <main class="workspace">
       <aside class="sidebar">
-        <h3>Add Objects</h3>
+        <h3>2D Objects</h3>
         <div id="controls-2d">
-          <button onclick="add2DShape('rectangle')" class="tool-btn" style="width:100%; margin-bottom:5px;">➕ Rectangle</button>
-          <button onclick="add2DShape('circle')" class="tool-btn" style="width:100%;">➕ Circle</button>
+          <button onclick="add2DShape('rectangle')" class="tool-btn">➕ Rectangle</button>
+          <button onclick="add2DShape('circle')" class="tool-btn">➕ Circle</button>
+          <button onclick="add2DShape('star')" class="tool-btn">⭐ Star</button>
+          <button onclick="add2DShape('text')" class="tool-btn">🔤 Text</button>
         </div>
+
         <div id="controls-3d" class="hidden">
-          <button onclick="add3DObject('cube')" class="tool-btn" style="width:100%; margin-bottom:5px;">🧊 Cube</button>
-          <button onclick="add3DObject('sphere')" class="tool-btn" style="width:100%;">🔮 Sphere</button>
+          <h3>3D Objects</h3>
+          <button onclick="add3DObject('cube')" class="tool-btn">🧊 Cube</button>
+          <button onclick="add3DObject('sphere')" class="tool-btn">🔮 Sphere</button>
+          <button onclick="add3DObject('cylinder')" class="tool-btn">🛢️ Cylinder</button>
+          <button onclick="add3DObject('torus')" class="tool-btn">🍩 Donut (Torus)</button>
+          <button onclick="add3DObject('pyramid')" class="tool-btn">🔺 Pyramid</button>
         </div>
 
         <hr style="margin: 15px 0; border-color: #3b3e54;">
-        <h3>Object Position</h3>
+        <h3>Position Controls</h3>
         <label>X: <input type="number" id="prop-x" value="200" oninput="updateObjectPosition()"></label>
         <label>Y: <input type="number" id="prop-y" value="150" oninput="updateObjectPosition()"></label>
         <label id="lbl-z" class="hidden">Z: <input type="number" id="prop-z" value="0" oninput="updateObjectPosition()"></label>
@@ -85,8 +99,7 @@
         <button onclick="addKeyframe()" class="secondary-btn">🔑 Set Keyframe</button>
         <span id="frame-counter">Frame: 0 / 60</span>
       </div>
-      <div class="timeline-track-container" id="timeline-track">
-        </div>
+      <div class="timeline-track-container" id="timeline-track"></div>
     </footer>
   </div>
 
@@ -94,7 +107,7 @@
     <div class="modal-content">
       <span class="close-btn" onclick="toggleAdminPanel()">&times;</span>
       <h2>School / Business Account Manager</h2>
-      <p style="color:#aaa; font-size:14px; margin-bottom:15px;">Create student or worker accounts manually or import them in bulk.</p>
+      <p style="color:#aaa; font-size:14px; margin-bottom:15px;">Create accounts or bulk import students.</p>
 
       <div class="admin-section">
         <h3>Option 1: Add Single Account</h3>
@@ -123,7 +136,7 @@
           <button onclick="processBulkImport()" class="primary-btn" style="width:100%; margin-top:10px;">Batch Create Accounts</button>
         </div>
       </div>
-      <div id="admin-status-msg" style="margin-top:15px; color:#4db5ff; font-weight:bold;"></div>
+      <div id="admin-status-msg" style="margin-top:15px; font-weight:bold;"></div>
     </div>
   </div>
 
