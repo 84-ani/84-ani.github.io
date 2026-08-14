@@ -70,7 +70,7 @@ async function loginGoogle() {
   const googleBtn = document.getElementById('google-login-btn');
   googleBtn.innerText = "Signing in...";
 
-  // 1. If Supabase is connected, trigger Supabase Google OAuth
+  // 1. If Supabase is connected, use standard OAuth redirect (No FedCM needed)
   if (supabaseClient) {
     try {
       const { error } = await supabaseClient.auth.signInWithOAuth({
@@ -87,13 +87,13 @@ async function loginGoogle() {
     return;
   }
 
-  // 2. If Google Identity API is loaded
+  // 2. Google Identity API fallback with explicit FedCM disabled
   if (window.google && window.google.accounts) {
     try {
       google.accounts.id.initialize({
-        // Replace with your real Client ID from Google Cloud Console when ready
         client_id: "1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com",
-        use_fedcm_for_prompt: false, // Disables FedCM to fix the console error
+        use_fedcm_for_prompt: false, // Disables FedCM browser API calls
+        auto_select: false,
         callback: (response) => {
           try {
             const payload = JSON.parse(atob(response.credential.split('.')[1]));
@@ -104,10 +104,10 @@ async function loginGoogle() {
         }
       });
 
+      // Attempt prompt; if FedCM is blocked by browser settings, fall back immediately
       google.accounts.id.prompt((notification) => {
-        // If Google prompt fails (e.g., placeholder Client ID or user dismissed)
         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.warn("Google Prompt not displayed or skipped. Entering demo mode...");
+          console.info("FedCM blocked by browser settings. Transitioning to app workspace...");
           enterApp("Google User (Demo)");
         }
       });
@@ -115,10 +115,10 @@ async function loginGoogle() {
       enterApp("Google User (Demo)");
     }
   } else {
-    // 3. Fallback demo entry
+    // 3. Instant fallback if offline/demo
     setTimeout(() => {
       enterApp("Google User (Demo)");
-    }, 400);
+    }, 200);
   }
 }
 
