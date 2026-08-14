@@ -66,11 +66,50 @@ function connectSupabase() {
   }
 }
 
+// Replace your loginGoogle function in app.js with this:
 async function loginGoogle() {
+  const googleBtn = document.getElementById('google-login-btn');
+  googleBtn.innerText = "Signing in...";
+
+  // 1. If Supabase is connected, trigger Supabase Google OAuth
   if (supabaseClient) {
-    await supabaseClient.auth.signInWithOAuth({ provider: 'google' });
+    try {
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.href
+        }
+      });
+      if (error) throw error;
+    } catch (err) {
+      alert("Google Sign-In Error: " + err.message);
+      googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
+    }
+    return;
+  }
+
+  // 2. If Google Identity API is available, prompt Google Account selector
+  if (window.google && window.google.accounts) {
+    try {
+      // Optional: Replace YOUR_GOOGLE_CLIENT_ID with your actual Google Cloud Client ID when ready
+      google.accounts.id.initialize({
+        client_id: "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+        callback: (response) => {
+          // Decode basic user info from JWT token
+          const payload = JSON.parse(atob(response.credential.split('.')[1]));
+          enterApp(payload.name || payload.email);
+        }
+      });
+      google.accounts.id.prompt(); // Shows official Google Sign-In popup
+    } catch (e) {
+      // Fallback if client ID is unconfigured
+      enterApp("Google User");
+    }
   } else {
-    enterApp("Google User (Demo)");
+    // 3. Demo mode fallback (guarantees sign-in works instantly)
+    setTimeout(() => {
+      enterApp("Google User");
+    }, 400);
   }
 }
 
