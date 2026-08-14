@@ -69,6 +69,8 @@
           <button onclick="add2DShape('circle')" class="tool-btn">➕ Circle</button>
           <button onclick="add2DShape('star')" class="tool-btn">⭐ Star</button>
           <button onclick="add2DShape('text')" class="tool-btn">🔤 Text</button>
+          <button onclick="enableDrawMode()" id="draw-btn" class="tool-btn">✏️ Freehand Draw Mode</button>
+          <button onclick="clearDrawings()" class="tool-btn" style="background:#ff4757;">🗑️ Clear Drawings</button>
         </div>
 
         <div id="controls-3d" class="hidden">
@@ -81,6 +83,23 @@
         </div>
 
         <hr style="margin: 15px 0; border-color: #3b3e54;">
+        
+        <h3>Appearance</h3>
+        <label>Object Color: 
+          <input type="color" id="prop-color" value="#4db5ff" onchange="updateObjectColor()">
+        </label>
+        <label>Backdrop Color: 
+          <input type="color" id="prop-bg-color" value="#0f0f15" onchange="updateBackdropColor()">
+        </label>
+
+        <hr style="margin: 15px 0; border-color: #3b3e54;">
+        
+        <h3>Soundtrack</h3>
+        <input type="file" id="audio-file" accept="audio/*" onchange="loadSoundtrack(event)" style="font-size:11px;">
+        <audio id="audio-player" style="display:none;"></audio>
+
+        <hr style="margin: 15px 0; border-color: #3b3e54;">
+        
         <h3>Position Controls</h3>
         <label>X: <input type="number" id="prop-x" value="200" oninput="updateObjectPosition()"></label>
         <label>Y: <input type="number" id="prop-y" value="150" oninput="updateObjectPosition()"></label>
@@ -98,6 +117,10 @@
         <button id="play-btn" onclick="togglePlayback()" class="primary-btn">▶ Play</button>
         <button onclick="addKeyframe()" class="secondary-btn">🔑 Set Keyframe</button>
         <span id="frame-counter">Frame: 0 / 60</span>
+        
+        <label style="margin-left: 15px; font-size:12px;">Total Frames: 
+          <input type="number" id="total-frames-input" value="60" min="10" max="300" style="width:50px; padding:2px;" onchange="updateTotalFrames()">
+        </label>
       </div>
       <div class="timeline-track-container" id="timeline-track"></div>
     </footer>
