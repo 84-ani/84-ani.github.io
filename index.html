@@ -3,369 +3,128 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>2D & 3D Keyframe Studio</title>
-  <link rel="manifest" href="manifest.json">
-  
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <title>AnimaStudio - 2D/3D Web Animator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
-
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
-    body { display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; color: white; overflow: hidden; }
-    
-    header { height: 50px; background: #2d2d2d; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; z-index: 10; }
-    .btn { background: #007acc; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
-    .btn:hover { background: #005999; }
-    .btn-alt { background: #3a3a3a; }
-    .btn-alt:hover { background: #555; }
-    
-    #app-container { display: flex; flex: 1; position: relative; overflow: hidden; }
-    #viewport-container { flex: 1; position: relative; background: #111; width: 100%; height: 100%; }
-    
-    canvas#canvas2d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; z-index: 1; }
-    #container3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; z-index: 2; }
-    
-    #admin-panel { width: 320px; background: #242424; border-left: 1px solid #333; padding: 1rem; display: none; overflow-y: auto; z-index: 5; }
-    
-    #timeline { height: 100px; background: #252526; border-top: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
-    .timeline-controls { display: flex; align-items: center; gap: 10px; }
-    input[type=range] { flex: 1; }
-
-    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-card { background: #2a2a2a; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; }
-    .modal-card input, .modal-card textarea, .modal-card select { width: 100%; margin: 8px 0; padding: 8px; background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; }
-    .hidden { display: none !important; }
-  </style>
 </head>
 <body>
 
-  <header>
-    <div>
-      <strong style="margin-right: 15px;">AnimStudio</strong>
-      <button class="btn btn-alt" id="btn-2d" onclick="switchMode('2D')">2D Canvas</button>
-      <button class="btn btn-alt" id="btn-3d" onclick="switchMode('3D')">3D Scene</button>
-    </div>
-    <div>
-      <button class="btn btn-alt" id="auth-btn" onclick="toggleAuthModal()">Login / Sign Up</button>
-      <button class="btn btn-alt" id="admin-btn" onclick="toggleAdminPanel()">Org Dashboard</button>
-    </div>
-  </header>
-
-  <div id="app-container">
-    <div id="viewport-container">
-      <canvas id="canvas2d"></canvas>
-      <div id="container3d"></div>
-    </div>
-
-    <div id="admin-panel">
-      <h3>Bulk Account Creator</h3>
-      <p style="font-size: 0.8rem; color: #aaa; margin: 5px 0;">Paste list (e.g., <code>john@school.org, John Doe</code>)</p>
+  <div id="auth-screen" class="screen">
+    <div class="auth-card">
+      <h1>AnimaStudio 🎬</h1>
+      <p>Easy 2D & 3D Animation Suite</p>
       
-      <textarea id="bulk-import" rows="6" placeholder="email, full_name (one per line)"></textarea>
-      
-      <label style="font-size: 0.85rem;">Password Strategy:</label>
-      <select id="pwd-strategy" onchange="toggleCustomPwd(this.value)">
-        <option value="default">Default Password (password123)</option>
-        <option value="custom_all">Custom Password for All</option>
-      </select>
-      
-      <input type="password" id="custom-pwd" class="hidden" placeholder="Enter universal password">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchAuthTab('personal')">Personal Sign In</button>
+        <button class="tab-btn" onclick="switchAuthTab('admin')">School / Business Admin</button>
+      </div>
 
-      <button class="btn" onclick="processBulkAccounts()" style="width: 100%; margin-top: 10px;">Create Accounts</button>
-      <div id="admin-log" style="margin-top: 10px; font-size: 0.8rem; color: #4caf50;"></div>
+      <div id="tab-personal" class="auth-tab">
+        <button id="google-login-btn" class="primary-btn google-btn">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+          Sign in with Google
+        </button>
+      </div>
+
+      <div id="tab-admin" class="auth-tab hidden">
+        <h3>Organization Setup</h3>
+        <input type="text" id="supabase-url" placeholder="Supabase Project URL">
+        <input type="password" id="supabase-key" placeholder="Supabase Anon Key">
+        <button onclick="connectSupabase()" class="secondary-btn">Connect Backend</button>
+      </div>
     </div>
   </div>
 
-  <div id="timeline">
-    <div class="timeline-controls">
-      <button class="btn" onclick="playAnimation()">▶ Play</button>
-      <button class="btn btn-alt" onclick="pauseAnimation()">⏸ Pause</button>
-      <button class="btn" onclick="addKeyframe()">📍 Add Keyframe</button>
-      <span>Frame: <strong id="current-frame-lbl">0</strong> / 100</span>
-    </div>
-    <input type="range" id="scrubber" min="0" max="100" value="0" oninput="onScrub(this.value)">
+  <div id="app-screen" class="screen hidden">
+    <header class="navbar">
+      <div class="nav-left">
+        <h2>AnimaStudio</h2>
+        <span id="user-badge" class="badge">Guest</span>
+      </div>
+      <div class="nav-center">
+        <button class="mode-btn active" id="mode-2d-btn" onclick="setDimensionMode('2d')">2D Canvas</button>
+        <button class="mode-btn" id="mode-3d-btn" onclick="setDimensionMode('3d')">3D Scene</button>
+      </div>
+      <div class="nav-right">
+        <button onclick="toggleAdminPanel()" id="admin-panel-toggle" class="hidden">School Admin Panel</button>
+        <button onclick="logout()" class="danger-btn">Log Out</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <h3>Add Objects</h3>
+        <div id="controls-2d">
+          <button onclick="add2DShape('rectangle')" class="tool-btn">➕ Rectangle</button>
+          <button onclick="add2DShape('circle')" class="tool-btn">➕ Circle</button>
+        </div>
+        <div id="controls-3d" class="hidden">
+          <button onclick="add3DObject('cube')" class="tool-btn">🧊 Cube</button>
+          <button onclick="add3DObject('sphere')" class="tool-btn">🔮 Sphere</button>
+        </div>
+
+        <hr>
+        <h3>Object Properties</h3>
+        <label>X Position: <input type="number" id="prop-x" value="0" onchange="updateObjectPosition()"></label>
+        <label>Y Position: <input type="number" id="prop-y" value="0" onchange="updateObjectPosition()"></label>
+        <label id="lbl-z" class="hidden">Z Position: <input type="number" id="prop-z" value="0" onchange="updateObjectPosition()"></label>
+      </aside>
+
+      <div class="viewport-container">
+        <canvas id="canvas-2d"></canvas>
+        <div id="canvas-3d-container" class="hidden"></div>
+      </div>
+    </main>
+
+    <footer class="timeline-bar">
+      <div class="timeline-controls">
+        <button id="play-btn" onclick="togglePlayback()">▶ Play</button>
+        <button onclick="addKeyframe()">🔑 Set Keyframe</button>
+        <span id="frame-counter">Frame: 0 / 60</span>
+      </div>
+      <div class="timeline-track-container" id="timeline-track">
+        </div>
+    </footer>
   </div>
 
-  <div id="auth-modal" class="modal hidden">
-    <div class="modal-card">
-      <h3>Sign In / Register</h3>
-      <p style="font-size:0.8rem; color:#ccc; margin-bottom: 10px;">For personal accounts or Organization Admins</p>
-      <button class="btn" onclick="loginOAuth('google')" style="width:100%; margin-bottom: 5px;">Continue with Google</button>
-      <button class="btn" onclick="loginOAuth('azure')" style="width:100%; margin-bottom: 15px; background: #2f2f2f;">Continue with Microsoft</button>
-      <hr style="border-color:#444;"><br>
-      <input type="email" id="email-in" placeholder="Email">
-      <input type="password" id="pass-in" placeholder="Password">
-      <button class="btn" onclick="loginEmail()" style="width:100%;">Sign In with Email</button>
-      <button class="btn btn-alt" onclick="toggleAuthModal()" style="width:100%; margin-top:5px;">Close</button>
+  <div id="admin-modal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close-btn" onclick="toggleAdminPanel()">&times;</span>
+      <h2>School / Business Account Manager</h2>
+      <p>Create student or worker accounts manually or import them in bulk.</p>
+
+      <div class="admin-section">
+        <h3>Option 1: Add Single Account</h3>
+        <div class="form-grid">
+          <input type="text" id="single-name" placeholder="Full Name">
+          <input type="email" id="single-email" placeholder="Email Address">
+          <input type="password" id="single-pass" placeholder="Custom Password (Optional)">
+          <button onclick="createSingleUser()" class="primary-btn">Create User</button>
+        </div>
+      </div>
+
+      <div class="admin-section">
+        <h3>Option 2: Bulk Import (.txt or Paste)</h3>
+        <textarea id="bulk-text-input" rows="4" placeholder="Format per line: email, name, custom_password&#10;Example: alex@school.edu, Alex Smith, Pass123!"></textarea>
+
+        <div class="bulk-options">
+          <label>Import File: <input type="file" id="file-import" accept=".txt,.csv" onchange="handleFileUpload(event)"></label>
+          <label>Password Strategy:
+            <select id="password-strategy" onchange="toggleGlobalPasswordInput()">
+              <option value="default">Default Password (password123)</option>
+              <option value="global">Custom Password for ALL Users</option>
+              <option value="custom">Use Password from Input/File</option>
+            </select>
+          </label>
+          <input type="password" id="global-password" class="hidden" placeholder="Enter Global Password">
+          <button onclick="processBulkImport()" class="primary-btn">Batch Create Accounts</button>
+        </div>
+      </div>
+      <div id="admin-status-msg"></div>
     </div>
   </div>
 
-  <script>
-    // --- SAFE SUPABASE INIT ---
-    const SUPABASE_URL = "https://ibggemfajbhyaxymfqfs.supabase.co"; 
-    const SUPABASE_KEY = "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"; 
-    let supabase = null;
-
-    if (window.supabase && SUPABASE_URL.indexOf("YOUR_SUPABASE") === -1) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    }
-
-    // --- STATE VARIABLES ---
-    let mode = '2D'; // '2D' or '3D'
-    let currentFrame = 0;
-    let isPlaying = false;
-    let keyframes = {}; 
-
-    // --- 2D ENGINE SETUP ---
-    const canvas2d = document.getElementById('canvas2d');
-    const ctx = canvas2d.getContext('2d');
-    let obj2D = { x: 200, y: 200, radius: 40 };
-
-    function resize2D() {
-      const container = document.getElementById('viewport-container');
-      canvas2d.width = container.clientWidth;
-      canvas2d.height = container.clientHeight;
-      render2D();
-    }
-
-    function render2D() {
-      ctx.clearRect(0, 0, canvas2d.width, canvas2d.height);
-      
-      // Draw Object
-      ctx.fillStyle = "#007acc";
-      ctx.beginPath();
-      ctx.arc(obj2D.x, obj2D.y, obj2D.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
-
-    // --- 3D ENGINE SETUP (Three.js) ---
-    const container3D = document.getElementById('container3d');
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    
-    container3D.appendChild(renderer.domElement);
-    
-    const geometry = new THREE.BoxGeometry(2, 2, 2);
-    const material = new THREE.MeshNormalMaterial();
-    const cube3D = new THREE.Mesh(geometry, material);
-    scene.add(cube3D);
-    camera.position.z = 5;
-
-    function resize3D() {
-      const w = container3D.clientWidth || 1;
-      const h = container3D.clientHeight || 1;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    }
-
-    function animate3DLoop(time) {
-      requestAnimationFrame(animate3DLoop);
-      if (window.TWEEN) TWEEN.update(time);
-      if (mode === '3D') {
-        cube3D.rotation.x += 0.01;
-        cube3D.rotation.y += 0.01;
-        renderer.render(scene, camera);
-      }
-    }
-    requestAnimationFrame(animate3DLoop);
-
-    // Mode Switcher
-    function switchMode(newMode) {
-      mode = newMode;
-      if(mode === '2D') {
-        canvas2d.style.display = 'block';
-        container3D.style.display = 'none';
-        resize2D();
-      } else {
-        canvas2d.style.display = 'none';
-        container3D.style.display = 'block';
-        resize3D();
-      }
-    }
-
-    // --- KEYFRAME & AUTO-TWEENING ENGINE ---
-    function addKeyframe() {
-      const pos = mode === '2D' ? { x: obj2D.x, y: obj2D.y } : { x: cube3D.position.x, y: cube3D.position.y, z: cube3D.position.z };
-      keyframes[currentFrame] = pos;
-      alert(`Keyframe stored at Frame ${currentFrame}`);
-    }
-
-    function onScrub(val) {
-      currentFrame = parseInt(val);
-      document.getElementById('current-frame-lbl').innerText = currentFrame;
-      interpolateFrame(currentFrame);
-    }
-
-    function interpolateFrame(frame) {
-      const frames = Object.keys(keyframes).map(Number).sort((a,b) => a - b);
-      if (frames.length === 0) return;
-
-      let prev = frames[0], next = frames[frames.length - 1];
-      for (let f of frames) {
-        if (f <= frame) prev = f;
-        if (f >= frame && next === frames[frames.length - 1]) next = f;
-      }
-
-      if (prev === next) {
-        applyState(keyframes[prev]);
-        return;
-      }
-
-      const factor = (frame - prev) / (next - prev);
-      const kPrev = keyframes[prev];
-      const kNext = keyframes[next];
-
-      if (mode === '2D') {
-        obj2D.x = kPrev.x + (kNext.x - kPrev.x) * factor;
-        obj2D.y = kPrev.y + (kNext.y - kPrev.y) * factor;
-        render2D();
-      } else {
-        cube3D.position.x = kPrev.x + (kNext.x - kPrev.x) * factor;
-        cube3D.position.y = kPrev.y + (kNext.y - kPrev.y) * factor;
-        cube3D.position.z = (kPrev.z || 0) + ((kNext.z || 0) - (kPrev.z || 0)) * factor;
-      }
-    }
-
-    function applyState(state) {
-      if (mode === '2D') {
-        obj2D.x = state.x;
-        obj2D.y = state.y;
-        render2D();
-      } else {
-        cube3D.position.x = state.x;
-        cube3D.position.y = state.y;
-        cube3D.position.z = state.z || 0;
-      }
-    }
-
-    let playInterval;
-    function playAnimation() {
-      if(isPlaying) return;
-      isPlaying = true;
-      playInterval = setInterval(() => {
-        currentFrame = (currentFrame + 1) % 101;
-        document.getElementById('scrubber').value = currentFrame;
-        onScrub(currentFrame);
-      }, 33);
-    }
-
-    function pauseAnimation() {
-      isPlaying = false;
-      clearInterval(playInterval);
-    }
-
-    // Mouse Dragging for 2D Canvas
-    let isDragging = false;
-    canvas2d.addEventListener('mousedown', (e) => { isDragging = true; });
-    canvas2d.addEventListener('touchstart', (e) => { isDragging = true; }, {passive: true});
-    
-    window.addEventListener('mousemove', (e) => {
-      if (isDragging && mode === '2D') {
-        const rect = canvas2d.getBoundingClientRect();
-        obj2D.x = e.clientX - rect.left;
-        obj2D.y = e.clientY - rect.top;
-        render2D();
-      }
-    });
-
-    window.addEventListener('touchmove', (e) => {
-      if (isDragging && mode === '2D' && e.touches[0]) {
-        const rect = canvas2d.getBoundingClientRect();
-        obj2D.x = e.touches[0].clientX - rect.left;
-        obj2D.y = e.touches[0].clientY - rect.top;
-        render2D();
-      }
-    }, {passive: true});
-
-    window.addEventListener('mouseup', () => { isDragging = false; });
-    window.addEventListener('touchend', () => { isDragging = false; });
-
-    // --- UI CONTROLS & AUTH ---
-    function toggleAuthModal() {
-      document.getElementById('auth-modal').classList.toggle('hidden');
-    }
-    
-    function toggleAdminPanel() {
-      const panel = document.getElementById('admin-panel');
-      panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
-    }
-
-    function toggleCustomPwd(val) {
-      document.getElementById('custom-pwd').classList.toggle('hidden', val !== 'custom_all');
-    }
-
-    async function loginOAuth(provider) {
-      if (!supabase) return alert("Supabase credentials not configured in index.html yet!");
-      await supabase.auth.signInWithOAuth({ provider: provider });
-    }
-
-    async function loginEmail() {
-      const email = document.getElementById('email-in').value;
-      const password = document.getElementById('pass-in').value;
-      
-      if (!supabase) {
-        alert("Demo Mode: Signed in locally!");
-        toggleAuthModal();
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if(error) alert(error.message);
-      else {
-        alert("Logged in successfully!");
-        toggleAuthModal();
-      }
-    }
-
-    async function processBulkAccounts() {
-      const rawText = document.getElementById('bulk-import').value;
-      const lines = rawText.split('\n').filter(l => l.trim() !== '');
-      const pwdStrategy = document.getElementById('pwd-strategy').value;
-      const customPwd = document.getElementById('custom-pwd').value;
-
-      let log = document.getElementById('admin-log');
-      log.innerHTML = "Processing...";
-
-      if (!lines.length) {
-        log.innerHTML = "Please enter at least one line!";
-        return;
-      }
-
-      for (let line of lines) {
-        const [email, fullName] = line.split(',').map(s => s ? s.trim() : '');
-        let password = pwdStrategy === 'default' ? 'password123' : customPwd;
-
-        if (!supabase) {
-          log.innerHTML += `<br>Simulated creation for: ${email}`;
-          continue;
-        }
-
-        const { data, error } = await supabase.auth.signUp({
-          email: email,
-          password: password,
-          options: { data: { full_name: fullName } }
-        });
-
-        if (error) log.innerHTML += `<br><span style="color:#ff6b6b">Failed: ${email}</span>`;
-        else log.innerHTML += `<br>Created: ${email}`;
-      }
-    }
-
-    // Initialize layout on load
-    window.addEventListener('load', () => {
-      resize2D();
-      resize3D();
-    });
-    window.addEventListener('resize', () => {
-      resize2D();
-      resize3D();
-    });
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
