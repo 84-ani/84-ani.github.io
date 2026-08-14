@@ -205,22 +205,48 @@ async function processAccountCreation(userList) {
   const statusMsg = document.getElementById('admin-status-msg');
   statusMsg.innerText = `Processing ${userList.length} accounts...`;
 
+  // Demo Mode fallback if Supabase isn't connected
   if (!supabaseClient) {
-    statusMsg.innerText = `[Demo Mode] Successfully added ${userList.length} accounts to database queue!`;
+    setTimeout(() => {
+      statusMsg.style.color = '#2ed573';
+      statusMsg.innerText = `[Demo Mode] Successfully created ${userList.length} user account(s)!`;
+      console.log("Created users (Demo):", userList);
+    }, 500);
     return;
   }
 
+  // Live Supabase Mode
   let createdCount = 0;
+  let errorDetails = [];
+
   for (const user of userList) {
-    const { error } = await supabaseClient.auth.signUp({
-      email: user.email,
-      password: user.password,
-      options: { data: { full_name: user.name } }
-    });
-    if (!error) createdCount++;
+    try {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email: user.email,
+        password: user.password,
+        options: { 
+          data: { full_name: user.name } 
+        }
+      });
+
+      if (error) {
+        errorDetails.push(`${user.email}: ${error.message}`);
+      } else if (data?.user) {
+        createdCount++;
+      }
+    } catch (err) {
+      errorDetails.push(`${user.email}: ${err.message}`);
+    }
   }
 
-  statusMsg.innerText = `Created ${createdCount} of ${userList.length} accounts successfully!`;
+  if (createdCount === userList.length) {
+    statusMsg.style.color = '#2ed573';
+    statusMsg.innerText = `Successfully created ${createdCount} of ${userList.length} accounts!`;
+  } else {
+    statusMsg.style.color = '#ff4757';
+    statusMsg.innerText = `Created ${createdCount} of ${userList.length} accounts.\n` + errorDetails.join('\n');
+  }
+}
 }
 
 /* --- 4. 2D / 3D RENDERING ENGINE --- */
