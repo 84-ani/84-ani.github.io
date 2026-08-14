@@ -66,7 +66,6 @@ function connectSupabase() {
   }
 }
 
-// Replace your loginGoogle function in app.js with this:
 async function loginGoogle() {
   const googleBtn = document.getElementById('google-login-btn');
   googleBtn.innerText = "Signing in...";
@@ -88,27 +87,37 @@ async function loginGoogle() {
     return;
   }
 
-  // 2. If Google Identity API is available, prompt Google Account selector
+  // 2. If Google Identity API is loaded
   if (window.google && window.google.accounts) {
     try {
-      // Optional: Replace YOUR_GOOGLE_CLIENT_ID with your actual Google Cloud Client ID when ready
       google.accounts.id.initialize({
+        // Replace with your real Client ID from Google Cloud Console when ready
         client_id: "1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com",
+        use_fedcm_for_prompt: false, // Disables FedCM to fix the console error
         callback: (response) => {
-          // Decode basic user info from JWT token
-          const payload = JSON.parse(atob(response.credential.split('.')[1]));
-          enterApp(payload.name || payload.email);
+          try {
+            const payload = JSON.parse(atob(response.credential.split('.')[1]));
+            enterApp(payload.name || payload.email);
+          } catch (e) {
+            enterApp("Google User");
+          }
         }
       });
-      google.accounts.id.prompt(); // Shows official Google Sign-In popup
+
+      google.accounts.id.prompt((notification) => {
+        // If Google prompt fails (e.g., placeholder Client ID or user dismissed)
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          console.warn("Google Prompt not displayed or skipped. Entering demo mode...");
+          enterApp("Google User (Demo)");
+        }
+      });
     } catch (e) {
-      // Fallback if client ID is unconfigured
-      enterApp("Google User");
+      enterApp("Google User (Demo)");
     }
   } else {
-    // 3. Demo mode fallback (guarantees sign-in works instantly)
+    // 3. Fallback demo entry
     setTimeout(() => {
-      enterApp("Google User");
+      enterApp("Google User (Demo)");
     }, 400);
   }
 }
