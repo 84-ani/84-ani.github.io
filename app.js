@@ -3,12 +3,19 @@ let supabaseClient = null;
 let currentUser = null;
 let currentMode = '2d';
 let currentFrame = 0;
-const totalFrames = 60;
+let totalFrames = 60;
 let isPlaying = false;
 let playInterval = null;
 let engine3DInitialized = false;
 
-// Keyframes Store: { frameIndex: { x, y, z } }
+// Custom Features State
+let backdropColor = '#0f0f15';
+let isDrawingMode = false;
+let isDrawing = false;
+let customPaths = []; // Custom 2D drawings store
+let audioTrack = null;
+
+// Keyframes Store
 let keyframes = {}; 
 
 // 2D Canvas State
@@ -16,12 +23,13 @@ const canvas2D = document.getElementById('canvas-2d');
 const ctx2D = canvas2D.getContext('2d');
 let activeObject2D = { type: 'rectangle', x: 200, y: 150, width: 80, height: 80, color: '#4db5ff' };
 
-// 3D Canvas State (Three.js)
+// 3D Canvas State
 let scene3D, camera3D, renderer3D, activeMesh3D;
 
-/* --- 1. INITIALIZATION --- */
+/* --- 1. INITIALIZATION & LISTENERS --- */
 window.addEventListener('DOMContentLoaded', () => {
   setupTimelineUI();
+  setupDrawingListeners();
 });
 
 function resizeCanvases() {
@@ -67,31 +75,12 @@ async function loginWithEmail() {
       enterApp(currentUser.user_metadata?.full_name || currentUser.email);
     }
   } else {
-    // Standalone Demo login
     currentUser = { email: email, id: "demo-user-123" };
     enterApp(email);
   }
 }
 
 async function loginGoogle() {
-  const googleBtn = document.getElementById('google-login-btn');
-  googleBtn.innerText = "Signing in...";
-
-  // 1. If Supabase is connected, use Supabase OAuth Redirect
-  if (supabaseClient) {
-    try {
-      const { error } = await supabaseClient.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.href }
-      });
-      if (error) throw error;
-      return;
-    } catch (err) {
-      console.warn("Supabase Google Auth failed, trying direct Google OAuth.");
-    }
-  }
-
-  // 2. Direct Google OAuth Popup using your Client ID
   const CLIENT_ID = '1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com';
 
   if (window.google && window.google.accounts && window.google.accounts.oauth2) {
@@ -101,39 +90,25 @@ async function loginGoogle() {
         scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
         callback: async (tokenResponse) => {
           if (tokenResponse && tokenResponse.access_token) {
-            // Fetch basic user profile info with access token
             try {
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
               });
               const profile = await res.json();
-              
               currentUser = { email: profile.email, id: profile.sub };
               enterApp(profile.name || profile.email);
             } catch (e) {
               enterApp("Google User");
             }
-          } else {
-            googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
           }
-        },
-        error_callback: (err) => {
-          console.error("Google Auth Error:", err);
-          googleBtn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> Sign in with Google`;
         }
       });
-
-      // Opens standard Google sign-in popup
       client.requestAccessToken();
     } catch (e) {
-      console.error("Initialization Error:", e);
       enterApp("Google User (Demo)");
     }
   } else {
-    // Fallback if script didn't load
-    setTimeout(() => {
-      enterApp("Google User (Demo)");
-    }, 300);
+    setTimeout(() => enterApp("Google User (Demo)"), 300);
   }
 }
 
@@ -177,66 +152,82 @@ function toggleAdminPanel() {
   document.getElementById('admin-modal').classList.toggle('hidden');
 }
 
-/* --- 3. CLOUD SAVE & LOAD SYSTEM --- */
-async function saveProjectCloud() {
-  const projectData = {
-    mode: currentMode,
-    keyframes: keyframes,
-    object2D: activeObject2D,
-    timestamp: new Date().toISOString()
-  };
+/* --- 3. CUSTOM COLOR & BACKDROP CONTROLS --- */
+function updateObjectColor() {
+  const color = document.getElementById('prop-color').value;
+  activeObject2D.color = color;
 
-  if (supabaseClient && currentUser) {
-    const { error } = await supabaseClient
-      .from('user_projects')
-      .upsert({ user_id: currentUser.id, project_data: projectData });
-
-    if (error) {
-      alert("Save failed: " + error.message);
-    } else {
-      alert("Project saved successfully to the cloud! ☁️");
-    }
-  } else {
-    // Local storage backup fallback
-    localStorage.setItem('anima_project_backup', JSON.stringify(projectData));
-    alert("Project saved locally! (Connect Supabase for multi-device cloud saves)");
+  if (activeMesh3D) {
+    activeMesh3D.material.color.set(color);
   }
+  render2D();
 }
 
-async function loadProjectsCloud() {
-  let savedData = null;
-
-  if (supabaseClient && currentUser) {
-    const { data, error } = await supabaseClient
-      .from('user_projects')
-      .select('project_data')
-      .eq('user_id', currentUser.id)
-      .single();
-
-    if (data) savedData = data.project_data;
-  } else {
-    const raw = localStorage.getItem('anima_project_backup');
-    if (raw) savedData = JSON.parse(raw);
+function updateBackdropColor() {
+  backdropColor = document.getElementById('prop-bg-color').value;
+  canvas2D.style.backgroundColor = backdropColor;
+  
+  if (scene3D) {
+    scene3D.background = new THREE.Color(backdropColor);
   }
+  render2D();
+}
 
-  if (savedData) {
-    keyframes = savedData.keyframes || {};
-    activeObject2D = savedData.object2D || activeObject2D;
+/* --- 4. CUSTOM FREEHAND DRAWING SYSTEM --- */
+function enableDrawMode() {
+  isDrawingMode = !isDrawingMode;
+  const drawBtn = document.getElementById('draw-btn');
+  drawBtn.style.background = isDrawingMode ? '#2ed573' : '#2a2d3d';
+  drawBtn.innerText = isDrawingMode ? '✏️ Drawing Mode: ON' : '✏️ Freehand Draw Mode';
+}
+
+function setupDrawingListeners() {
+  canvas2D.addEventListener('mousedown', (e) => {
+    if (!isDrawingMode || currentMode !== '2d') return;
+    isDrawing = true;
+    const rect = canvas2D.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     
-    // Highlight saved keyframes in UI timeline
-    setupTimelineUI();
-    Object.keys(keyframes).forEach(frameIdx => {
-      document.getElementById(`frame-${frameIdx}`)?.classList.add('keyframe');
+    customPaths.push({
+      color: activeObject2D.color,
+      points: [{ x, y }]
     });
+  });
 
-    setDimensionMode(savedData.mode || '2d');
-    alert("Saved animation project loaded! 📂");
-  } else {
-    alert("No saved project found!");
-  }
+  canvas2D.addEventListener('mousemove', (e) => {
+    if (!isDrawing || !isDrawingMode || currentMode !== '2d') return;
+    const rect = canvas2D.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const currentPath = customPaths[customPaths.length - 1];
+    if (currentPath) {
+      currentPath.points.push({ x, y });
+      render2D();
+    }
+  });
+
+  window.addEventListener('mouseup', () => isDrawing = false);
 }
 
-/* --- 4. EXPANDED 2D & 3D GEOMETRY ENGINE --- */
+function clearDrawings() {
+  customPaths = [];
+  render2D();
+}
+
+/* --- 5. AUDIO / SOUNDTRACK SYSTEM --- */
+function loadSoundtrack(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const audioPlayer = document.getElementById('audio-player');
+  audioPlayer.src = URL.createObjectURL(file);
+  audioTrack = audioPlayer;
+  alert("Soundtrack loaded successfully! 🎵");
+}
+
+/* --- 6. 2D / 3D GEOMETRY ENGINE --- */
 function setDimensionMode(mode) {
   currentMode = mode;
   document.getElementById('mode-2d-btn').classList.toggle('active', mode === '2d');
@@ -253,8 +244,22 @@ function setDimensionMode(mode) {
 
 function render2D() {
   ctx2D.clearRect(0, 0, canvas2D.width, canvas2D.height);
-  ctx2D.fillStyle = activeObject2D.color;
+  
+  // Render custom freehand drawn paths
+  customPaths.forEach(path => {
+    if (path.points.length < 2) return;
+    ctx2D.beginPath();
+    ctx2D.strokeStyle = path.color;
+    ctx2D.lineWidth = 4;
+    ctx2D.moveTo(path.points[0].x, path.points[0].y);
+    for (let i = 1; i < path.points.length; i++) {
+      ctx2D.lineTo(path.points[i].x, path.points[i].y);
+    }
+    ctx2D.stroke();
+  });
 
+  // Render main keyframed object
+  ctx2D.fillStyle = activeObject2D.color;
   if (activeObject2D.type === 'rectangle') {
     ctx2D.fillRect(activeObject2D.x, activeObject2D.y, activeObject2D.width, activeObject2D.height);
   } else if (activeObject2D.type === 'circle') {
@@ -289,7 +294,7 @@ function drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius) {
 function init3DEngine() {
   const container = document.getElementById('canvas-3d-container');
   scene3D = new THREE.Scene();
-  scene3D.background = new THREE.Color(0x0f0f15);
+  scene3D.background = new THREE.Color(backdropColor);
 
   camera3D = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
   camera3D.position.z = 6;
@@ -322,25 +327,14 @@ function add3DObject(type) {
 
   let geometry;
   switch (type) {
-    case 'sphere':
-      geometry = new THREE.SphereGeometry(1, 32, 32);
-      break;
-    case 'cylinder':
-      geometry = new THREE.CylinderGeometry(0.8, 0.8, 2, 32);
-      break;
-    case 'torus':
-      geometry = new THREE.TorusGeometry(1, 0.35, 16, 100);
-      break;
-    case 'pyramid':
-      geometry = new THREE.ConeGeometry(1.2, 2, 4);
-      break;
-    case 'cube':
-    default:
-      geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-      break;
+    case 'sphere': geometry = new THREE.SphereGeometry(1, 32, 32); break;
+    case 'cylinder': geometry = new THREE.CylinderGeometry(0.8, 0.8, 2, 32); break;
+    case 'torus': geometry = new THREE.TorusGeometry(1, 0.35, 16, 100); break;
+    case 'pyramid': geometry = new THREE.ConeGeometry(1.2, 2, 4); break;
+    case 'cube': default: geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5); break;
   }
 
-  const material = new THREE.MeshPhongMaterial({ color: 0x4db5ff, shininess: 80 });
+  const material = new THREE.MeshPhongMaterial({ color: activeObject2D.color, shininess: 80 });
   activeMesh3D = new THREE.Mesh(geometry, material);
   scene3D.add(activeMesh3D);
 }
@@ -359,7 +353,7 @@ function updateObjectPosition() {
   }
 }
 
-/* --- 5. TIMELINE & TWEENING ENGINE --- */
+/* --- 7. TIMELINE & DYNAMIC FRAMES ENGINE --- */
 function setupTimelineUI() {
   const track = document.getElementById('timeline-track');
   track.innerHTML = '';
@@ -372,6 +366,21 @@ function setupTimelineUI() {
     frame.onclick = () => selectFrame(i);
     track.appendChild(frame);
   }
+}
+
+function updateTotalFrames() {
+  const val = parseInt(document.getElementById('total-frames-input').value) || 60;
+  totalFrames = Math.max(10, Math.min(300, val));
+  setupTimelineUI();
+  
+  // Re-highlight keyframes
+  Object.keys(keyframes).forEach(frameIdx => {
+    if (frameIdx < totalFrames) {
+      document.getElementById(`frame-${frameIdx}`)?.classList.add('keyframe');
+    }
+  });
+  
+  document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${totalFrames}`;
 }
 
 function selectFrame(index) {
@@ -439,6 +448,11 @@ function togglePlayback() {
 
   if (isPlaying) {
     playBtn.innerText = "⏸ Pause";
+    if (audioTrack) {
+      audioTrack.currentTime = (currentFrame / totalFrames) * audioTrack.duration || 0;
+      audioTrack.play();
+    }
+
     playInterval = setInterval(() => {
       currentFrame = (currentFrame + 1) % totalFrames;
       selectFrame(currentFrame);
@@ -446,33 +460,64 @@ function togglePlayback() {
   } else {
     playBtn.innerText = "▶ Play";
     clearInterval(playInterval);
+    if (audioTrack) audioTrack.pause();
   }
 }
 
-/* Admin Account Creation */
-async function processAccountCreation(userList) {
-  const statusMsg = document.getElementById('admin-status-msg');
-  statusMsg.style.color = '#4db5ff';
-  statusMsg.innerText = `Processing ${userList.length} user accounts...`;
+/* --- 8. SAVE / LOAD SYSTEM --- */
+async function saveProjectCloud() {
+  const projectData = {
+    mode: currentMode,
+    keyframes: keyframes,
+    object2D: activeObject2D,
+    customPaths: customPaths,
+    backdropColor: backdropColor,
+    totalFrames: totalFrames
+  };
 
-  if (!supabaseClient) {
-    setTimeout(() => {
-      statusMsg.style.color = '#2ed573';
-      statusMsg.innerText = `[Demo Mode] Added ${userList.length} accounts to database queue!`;
-    }, 400);
-    return;
+  if (supabaseClient && currentUser) {
+    const { error } = await supabaseClient
+      .from('user_projects')
+      .upsert({ user_id: currentUser.id, project_data: projectData });
+
+    if (error) alert("Save failed: " + error.message);
+    else alert("Project saved to cloud! ☁️");
+  } else {
+    localStorage.setItem('anima_project_backup', JSON.stringify(projectData));
+    alert("Project saved locally!");
+  }
+}
+
+async function loadProjectsCloud() {
+  let savedData = null;
+
+  if (supabaseClient && currentUser) {
+    const { data } = await supabaseClient
+      .from('user_projects')
+      .select('project_data')
+      .eq('user_id', currentUser.id)
+      .single();
+    if (data) savedData = data.project_data;
+  } else {
+    const raw = localStorage.getItem('anima_project_backup');
+    if (raw) savedData = JSON.parse(raw);
   }
 
-  let createdCount = 0;
-  for (const user of userList) {
-    const { data, error } = await supabaseClient.auth.signUp({
-      email: user.email.trim(),
-      password: user.password.trim(),
-      options: { data: { full_name: user.name } }
-    });
-    if (!error && data?.user) createdCount++;
-  }
+  if (savedData) {
+    keyframes = savedData.keyframes || {};
+    activeObject2D = savedData.object2D || activeObject2D;
+    customPaths = savedData.customPaths || [];
+    backdropColor = savedData.backdropColor || '#0f0f15';
+    totalFrames = savedData.totalFrames || 60;
 
-  statusMsg.style.color = createdCount > 0 ? '#2ed573' : '#ff4757';
-  statusMsg.innerText = `Created ${createdCount} of ${userList.length} account(s) successfully!`;
+    document.getElementById('total-frames-input').value = totalFrames;
+    document.getElementById('prop-bg-color').value = backdropColor;
+    updateBackdropColor();
+
+    updateTotalFrames();
+    setDimensionMode(savedData.mode || '2d');
+    alert("Saved animation project loaded! 📂");
+  } else {
+    alert("No saved project found!");
+  }
 }
