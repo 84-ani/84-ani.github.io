@@ -1,84 +1,92 @@
 /* Global Application State */
 let supabaseClient = null;
-let currentMode = '2d'; // '2d' or '3d'
+let currentMode = '2d';
 let currentFrame = 0;
 const totalFrames = 60;
 let isPlaying = false;
 let playInterval = null;
+let engine3DInitialized = false;
 
-// Animation Data Structure: { frameIndex: { posX, posY, posZ } }
+// Keyframes Store: { frameIndex: { x, y, z } }
 let keyframes = {}; 
 
-// 2D Engine Variables
+// 2D Canvas State
 const canvas2D = document.getElementById('canvas-2d');
 const ctx2D = canvas2D.getContext('2d');
 let activeObject2D = { type: 'rectangle', x: 200, y: 150, width: 80, height: 80, color: '#4db5ff' };
 
-// 3D Engine Variables (Three.js)
+// 3D Canvas State (Three.js)
 let scene3D, camera3D, renderer3D, activeMesh3D;
 
-/* --- 1. INITIALIZATION & SETUP --- */
-window.onload = () => {
-  resizeCanvases();
+/* --- 1. INITIALIZATION --- */
+window.addEventListener('DOMContentLoaded', () => {
   setupTimelineUI();
-  init3DEngine();
-  render2D();
-};
+});
 
 function resizeCanvases() {
   const container = document.querySelector('.viewport-container');
+  if (!container) return;
+
   canvas2D.width = container.clientWidth;
   canvas2D.height = container.clientHeight;
-  if (renderer3D) {
+
+  if (renderer3D && camera3D) {
     renderer3D.setSize(container.clientWidth, container.clientHeight);
     camera3D.aspect = container.clientWidth / container.clientHeight;
     camera3D.updateProjectionMatrix();
   }
+  render2D();
 }
-window.onresize = resizeCanvases;
 
-/* --- 2. AUTHENTICATION & ADMIN API --- */
+window.addEventListener('resize', resizeCanvases);
+
+/* --- 2. AUTH & MODAL FUNCTIONS --- */
 function switchAuthTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.getElementById('tab-personal').classList.add('hidden');
-  document.getElementById('tab-admin').classList.add('hidden');
-
-  if (tab === 'personal') {
-    document.getElementById('tab-personal').classList.remove('hidden');
-    event.target.classList.add('active');
-  } else {
-    document.getElementById('tab-admin').classList.remove('hidden');
-    event.target.classList.add('active');
-  }
+  document.getElementById('btn-tab-personal').classList.toggle('active', tab === 'personal');
+  document.getElementById('btn-tab-admin').classList.toggle('active', tab === 'admin');
+  document.getElementById('tab-personal').classList.toggle('hidden', tab !== 'personal');
+  document.getElementById('tab-admin').classList.toggle('hidden', tab !== 'admin');
 }
 
 function connectSupabase() {
-  const url = document.getElementById('supabase-url').value;
-  const key = document.getElementById('supabase-key').value;
+  const url = document.getElementById('supabase-url').value.trim();
+  const key = document.getElementById('supabase-key').value.trim();
 
   if (!url || !key) {
-    alert("Please enter valid Supabase Credentials!");
+    alert("Please enter both Supabase URL and Anon Key.");
     return;
   }
-  supabaseClient = supabase.createClient(url, key);
-  document.getElementById('admin-panel-toggle').classList.remove('hidden');
-  enterApp("School/Business Admin");
+
+  try {
+    supabaseClient = window.supabase.createClient(url, key);
+    document.getElementById('admin-panel-toggle').classList.remove('hidden');
+    enterApp("Admin User");
+  } catch (err) {
+    alert("Failed to connect to Supabase. Check your credentials.");
+  }
 }
 
-document.getElementById('google-login-btn').onclick = async () => {
+async function loginGoogle() {
   if (supabaseClient) {
     await supabaseClient.auth.signInWithOAuth({ provider: 'google' });
   } else {
-    // Demo Access mode if backend not connected
     enterApp("Google User (Demo)");
   }
-};
+}
 
 function enterApp(userRole) {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('user-badge').innerText = userRole;
-  resizeCanvases();
+
+  // Initialize graphics once viewport is visible
+  setTimeout(() => {
+    resizeCanvases();
+    if (!engine3DInitialized) {
+      init3DEngine();
+      engine3DInitialized = true;
+    }
+  }, 100);
 }
 
 function logout() {
@@ -91,11 +99,10 @@ function toggleAdminPanel() {
 
 function toggleGlobalPasswordInput() {
   const strategy = document.getElementById('password-strategy').value;
-  const globalInput = document.getElementById('global-password');
-  globalInput.classList.toggle('hidden', strategy !== 'global');
+  document.getElementById('global-password').classList.toggle('hidden', strategy !== 'global');
 }
 
-/* --- 3. BULK USER CREATION & FILE PARSING --- */
+/* --- 3. BULK USER MANAGEMENT --- */
 function handleFileUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -108,9 +115,14 @@ function handleFileUpload(event) {
 }
 
 async function createSingleUser() {
-  const name = document.getElementById('single-name').value;
-  const email = document.getElementById('single-email').value;
-  const password = document.getElementById('single-pass').value || "password123";
+  const name = document.getElementById('single-name').value.trim();
+  const email = document.getElementById('single-email').value.trim();
+  const password = document.getElementById('single-pass').value.trim() || "password123";
+
+  if (!email) {
+    alert("Email address is required!");
+    return;
+  }
 
   await processAccountCreation([{ email, name, password }]);
 }
@@ -118,10 +130,10 @@ async function createSingleUser() {
 async function processBulkImport() {
   const text = document.getElementById('bulk-text-input').value.trim();
   const strategy = document.getElementById('password-strategy').value;
-  const globalPass = document.getElementById('global-password').value;
+  const globalPass = document.getElementById('global-password').value.trim();
 
   if (!text) {
-    alert("Please paste data or upload a valid text file.");
+    alert("Please paste text or upload a .txt/.csv file first.");
     return;
   }
 
@@ -137,7 +149,7 @@ async function processBulkImport() {
 
       userList.push({
         email: parts[0],
-        name: parts[1] || "Student/User",
+        name: parts[1] || "Student",
         password: pwd
       });
     }
@@ -148,10 +160,10 @@ async function processBulkImport() {
 
 async function processAccountCreation(userList) {
   const statusMsg = document.getElementById('admin-status-msg');
-  statusMsg.innerText = `Processing ${userList.length} user accounts...`;
+  statusMsg.innerText = `Processing ${userList.length} accounts...`;
 
   if (!supabaseClient) {
-    statusMsg.innerText = `[Demo Mode] Successfully parsed & created ${userList.length} accounts!`;
+    statusMsg.innerText = `[Demo Mode] Successfully added ${userList.length} accounts to database queue!`;
     return;
   }
 
@@ -168,7 +180,7 @@ async function processAccountCreation(userList) {
   statusMsg.innerText = `Created ${createdCount} of ${userList.length} accounts successfully!`;
 }
 
-/* --- 4. 2D AND 3D ANIMATION ENGINES --- */
+/* --- 4. 2D / 3D RENDERING ENGINE --- */
 function setDimensionMode(mode) {
   currentMode = mode;
   document.getElementById('mode-2d-btn').classList.toggle('active', mode === '2d');
@@ -179,6 +191,8 @@ function setDimensionMode(mode) {
   document.getElementById('controls-2d').classList.toggle('hidden', mode !== '2d');
   document.getElementById('controls-3d').classList.toggle('hidden', mode !== '3d');
   document.getElementById('lbl-z').classList.toggle('hidden', mode !== '3d');
+
+  resizeCanvases();
 }
 
 function render2D() {
@@ -245,12 +259,12 @@ function updateObjectPosition() {
     activeObject2D.x = x;
     activeObject2D.y = y;
     render2D();
-  } else {
+  } else if (activeMesh3D) {
     activeMesh3D.position.set(x, y, z);
   }
 }
 
-/* --- 5. TIMELINE & AUTO-TWEENING INTERPOLATION ENGINE --- */
+/* --- 5. TIMELINE & TWEENING ENGINE --- */
 function setupTimelineUI() {
   const track = document.getElementById('timeline-track');
   track.innerHTML = '';
@@ -271,31 +285,27 @@ function selectFrame(index) {
   document.getElementById(`frame-${index}`).classList.add('active');
   document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${totalFrames}`;
 
-  // Evaluate Auto-Interpolation (Tweening) for current frame
   evaluateInterpolatedState(currentFrame);
 }
 
 function addKeyframe() {
-  const posX = currentMode === '2d' ? activeObject2D.x : activeMesh3D.position.x;
-  const posY = currentMode === '2d' ? activeObject2D.y : activeMesh3D.position.y;
-  const posZ = currentMode === '3d' ? activeMesh3D.position.z : 0;
+  const posX = currentMode === '2d' ? activeObject2D.x : (activeMesh3D ? activeMesh3D.position.x : 0);
+  const posY = currentMode === '2d' ? activeObject2D.y : (activeMesh3D ? activeMesh3D.position.y : 0);
+  const posZ = currentMode === '3d' && activeMesh3D ? activeMesh3D.position.z : 0;
 
   keyframes[currentFrame] = { x: posX, y: posY, z: posZ };
   document.getElementById(`frame-${currentFrame}`).classList.add('keyframe');
 }
 
-/* Math Engine: Interpolate (Tween) automatically between defined keyframes */
 function evaluateInterpolatedState(frame) {
   const keys = Object.keys(keyframes).map(Number).sort((a, b) => a - b);
   if (keys.length === 0) return;
 
-  // Exact keyframe match
   if (keyframes[frame]) {
     applyPos(keyframes[frame].x, keyframes[frame].y, keyframes[frame].z);
     return;
   }
 
-  // Find surrounding keyframes for linear interpolation (Inbetweening)
   let prevKey = null, nextKey = null;
   for (let k of keys) {
     if (k < frame) prevKey = k;
@@ -337,7 +347,7 @@ function togglePlayback() {
     playInterval = setInterval(() => {
       currentFrame = (currentFrame + 1) % totalFrames;
       selectFrame(currentFrame);
-    }, 1000 / 24); // 24 FPS
+    }, 1000 / 24);
   } else {
     playBtn.innerText = "▶ Play";
     clearInterval(playInterval);
