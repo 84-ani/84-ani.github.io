@@ -70,14 +70,12 @@ async function loginGoogle() {
   const googleBtn = document.getElementById('google-login-btn');
   googleBtn.innerText = "Signing in...";
 
-  // 1. If Supabase is connected, use standard OAuth redirect (No FedCM needed)
+  // 1. If Supabase is connected, use Supabase OAuth Redirect
   if (supabaseClient) {
     try {
       const { error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          redirectTo: window.location.href
-        }
+        options: { redirectTo: window.location.href }
       });
       if (error) throw error;
     } catch (err) {
@@ -87,35 +85,32 @@ async function loginGoogle() {
     return;
   }
 
-  // 2. Google Identity API fallback with explicit FedCM disabled
-  if (window.google && window.google.accounts) {
+  // 2. Standard OAuth Popup (No FedCM, zero console errors)
+  if (window.google && window.google.accounts && window.google.accounts.oauth2) {
     try {
-      google.accounts.id.initialize({
-        client_id: "1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com",
-        use_fedcm_for_prompt: false, // Disables FedCM browser API calls
-        auto_select: false,
-        callback: (response) => {
-          try {
-            const payload = JSON.parse(atob(response.credential.split('.')[1]));
-            enterApp(payload.name || payload.email);
-          } catch (e) {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: '1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com',
+        scope: 'https://www.googleapis.com/auth/userinfo.profile',
+        callback: (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
             enterApp("Google User");
+          } else {
+            enterApp("Google User (Demo)");
           }
-        }
-      });
-
-      // Attempt prompt; if FedCM is blocked by browser settings, fall back immediately
-      google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.info("FedCM blocked by browser settings. Transitioning to app workspace...");
+        },
+        error_callback: () => {
+          // If Client ID isn't set up yet, enter demo mode seamlessly
           enterApp("Google User (Demo)");
         }
       });
+      
+      // Requests access token via clean popup window
+      client.requestAccessToken();
     } catch (e) {
       enterApp("Google User (Demo)");
     }
   } else {
-    // 3. Instant fallback if offline/demo
+    // 3. Instant Fallback for testing/offline
     setTimeout(() => {
       enterApp("Google User (Demo)");
     }, 200);
