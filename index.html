@@ -16,13 +16,13 @@
       <p>Easy 2D & 3D Animation Suite</p>
       
       <div class="tabs">
-        <button class="tab-btn active" onclick="switchAuthTab('personal')">Personal Sign In</button>
-        <button class="tab-btn" onclick="switchAuthTab('admin')">School / Business Admin</button>
+        <button id="btn-tab-personal" class="tab-btn active" onclick="switchAuthTab('personal')">Personal Sign In</button>
+        <button id="btn-tab-admin" class="tab-btn" onclick="switchAuthTab('admin')">School / Business Admin</button>
       </div>
 
       <div id="tab-personal" class="auth-tab">
-        <button id="google-login-btn" class="primary-btn google-btn">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+        <button id="google-login-btn" onclick="loginGoogle()" class="primary-btn google-btn">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
           Sign in with Google
         </button>
       </div>
@@ -31,7 +31,7 @@
         <h3>Organization Setup</h3>
         <input type="text" id="supabase-url" placeholder="Supabase Project URL">
         <input type="password" id="supabase-key" placeholder="Supabase Anon Key">
-        <button onclick="connectSupabase()" class="secondary-btn">Connect Backend</button>
+        <button onclick="connectSupabase()" class="secondary-btn" style="width:100%; margin-top:10px;">Connect Backend</button>
       </div>
     </div>
   </div>
@@ -48,7 +48,7 @@
       </div>
       <div class="nav-right">
         <button onclick="toggleAdminPanel()" id="admin-panel-toggle" class="hidden">School Admin Panel</button>
-        <button onclick="logout()" class="danger-btn">Log Out</button>
+        <button onclick="logout()" class="danger-btn" style="background:#ff4757; color:#fff;">Log Out</button>
       </div>
     </header>
 
@@ -56,19 +56,19 @@
       <aside class="sidebar">
         <h3>Add Objects</h3>
         <div id="controls-2d">
-          <button onclick="add2DShape('rectangle')" class="tool-btn">➕ Rectangle</button>
-          <button onclick="add2DShape('circle')" class="tool-btn">➕ Circle</button>
+          <button onclick="add2DShape('rectangle')" class="tool-btn" style="width:100%; margin-bottom:5px;">➕ Rectangle</button>
+          <button onclick="add2DShape('circle')" class="tool-btn" style="width:100%;">➕ Circle</button>
         </div>
         <div id="controls-3d" class="hidden">
-          <button onclick="add3DObject('cube')" class="tool-btn">🧊 Cube</button>
-          <button onclick="add3DObject('sphere')" class="tool-btn">🔮 Sphere</button>
+          <button onclick="add3DObject('cube')" class="tool-btn" style="width:100%; margin-bottom:5px;">🧊 Cube</button>
+          <button onclick="add3DObject('sphere')" class="tool-btn" style="width:100%;">🔮 Sphere</button>
         </div>
 
-        <hr>
-        <h3>Object Properties</h3>
-        <label>X Position: <input type="number" id="prop-x" value="0" onchange="updateObjectPosition()"></label>
-        <label>Y Position: <input type="number" id="prop-y" value="0" onchange="updateObjectPosition()"></label>
-        <label id="lbl-z" class="hidden">Z Position: <input type="number" id="prop-z" value="0" onchange="updateObjectPosition()"></label>
+        <hr style="margin: 15px 0; border-color: #3b3e54;">
+        <h3>Object Position</h3>
+        <label>X: <input type="number" id="prop-x" value="200" oninput="updateObjectPosition()"></label>
+        <label>Y: <input type="number" id="prop-y" value="150" oninput="updateObjectPosition()"></label>
+        <label id="lbl-z" class="hidden">Z: <input type="number" id="prop-z" value="0" oninput="updateObjectPosition()"></label>
       </aside>
 
       <div class="viewport-container">
@@ -79,8 +79,8 @@
 
     <footer class="timeline-bar">
       <div class="timeline-controls">
-        <button id="play-btn" onclick="togglePlayback()">▶ Play</button>
-        <button onclick="addKeyframe()">🔑 Set Keyframe</button>
+        <button id="play-btn" onclick="togglePlayback()" class="primary-btn">▶ Play</button>
+        <button onclick="addKeyframe()" class="secondary-btn">🔑 Set Keyframe</button>
         <span id="frame-counter">Frame: 0 / 60</span>
       </div>
       <div class="timeline-track-container" id="timeline-track">
@@ -92,7 +92,7 @@
     <div class="modal-content">
       <span class="close-btn" onclick="toggleAdminPanel()">&times;</span>
       <h2>School / Business Account Manager</h2>
-      <p>Create student or worker accounts manually or import them in bulk.</p>
+      <p style="color:#aaa; font-size:14px; margin-bottom:15px;">Create student or worker accounts manually or import them in bulk.</p>
 
       <div class="admin-section">
         <h3>Option 1: Add Single Account</h3>
@@ -100,7 +100,7 @@
           <input type="text" id="single-name" placeholder="Full Name">
           <input type="email" id="single-email" placeholder="Email Address">
           <input type="password" id="single-pass" placeholder="Custom Password (Optional)">
-          <button onclick="createSingleUser()" class="primary-btn">Create User</button>
+          <button onclick="createSingleUser()" class="primary-btn" style="margin-top:5px;">Create User</button>
         </div>
       </div>
 
@@ -109,8 +109,8 @@
         <textarea id="bulk-text-input" rows="4" placeholder="Format per line: email, name, custom_password&#10;Example: alex@school.edu, Alex Smith, Pass123!"></textarea>
 
         <div class="bulk-options">
-          <label>Import File: <input type="file" id="file-import" accept=".txt,.csv" onchange="handleFileUpload(event)"></label>
-          <label>Password Strategy:
+          <label style="display:block; margin-top:5px;">Import File: <input type="file" id="file-import" accept=".txt,.csv" onchange="handleFileUpload(event)"></label>
+          <label style="display:block; margin-top:5px;">Password Strategy:
             <select id="password-strategy" onchange="toggleGlobalPasswordInput()">
               <option value="default">Default Password (password123)</option>
               <option value="global">Custom Password for ALL Users</option>
@@ -118,10 +118,10 @@
             </select>
           </label>
           <input type="password" id="global-password" class="hidden" placeholder="Enter Global Password">
-          <button onclick="processBulkImport()" class="primary-btn">Batch Create Accounts</button>
+          <button onclick="processBulkImport()" class="primary-btn" style="width:100%; margin-top:10px;">Batch Create Accounts</button>
         </div>
       </div>
-      <div id="admin-status-msg"></div>
+      <div id="admin-status-msg" style="margin-top:15px; color:#4db5ff; font-weight:bold;"></div>
     </div>
   </div>
 
