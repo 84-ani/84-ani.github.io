@@ -93,7 +93,7 @@ async function loginGoogle() {
     try {
       // Optional: Replace YOUR_GOOGLE_CLIENT_ID with your actual Google Cloud Client ID when ready
       google.accounts.id.initialize({
-        client_id: "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+        client_id: "1091638662919-51qtpgkslddd32e0bb3icpd685j0b040.apps.googleusercontent.com",
         callback: (response) => {
           // Decode basic user info from JWT token
           const payload = JSON.parse(atob(response.credential.split('.')[1]));
